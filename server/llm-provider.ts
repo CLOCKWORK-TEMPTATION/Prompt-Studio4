@@ -1,8 +1,11 @@
 import { z } from "zod";
 
-// OpenAI-compatible API configuration
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+// Groq API configuration (OpenAI-compatible)
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+
+// Default model for Groq
+const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 
 export interface Message {
   role: "system" | "user" | "assistant" | "developer";
@@ -42,11 +45,11 @@ export class LLMProvider {
   private baseUrl: string;
 
   constructor(apiKey?: string, baseUrl?: string) {
-    this.apiKey = apiKey || OPENAI_API_KEY || "";
-    this.baseUrl = baseUrl || OPENAI_BASE_URL;
+    this.apiKey = apiKey || GROQ_API_KEY || "";
+    this.baseUrl = baseUrl || GROQ_BASE_URL;
 
     if (!this.apiKey) {
-      throw new Error("OPENAI_API_KEY environment variable is required");
+      throw new Error("GROQ_API_KEY environment variable is required");
     }
   }
 
@@ -56,11 +59,17 @@ export class LLMProvider {
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const startTime = Date.now();
 
-    // Convert "developer" role to "system" for OpenAI compatibility
+    // Convert "developer" role to "system" for API compatibility
     const messages = request.messages.map((msg) => ({
       role: msg.role === "developer" ? "system" : msg.role,
       content: msg.content,
     }));
+
+    // Use default model if not specified or if it's an OpenAI model
+    let model = request.model;
+    if (model.startsWith("gpt-") || model.startsWith("o1-")) {
+      model = DEFAULT_MODEL;
+    }
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
@@ -69,7 +78,7 @@ export class LLMProvider {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        model: request.model,
+        model,
         messages,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.max_tokens,
@@ -78,7 +87,7 @@ export class LLMProvider {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${error}`);
+      throw new Error(`Groq API error (${response.status}): ${error}`);
     }
 
     const data = await response.json();
@@ -140,7 +149,7 @@ Context: ${prompt.context || "(فارغ)"}
 }`;
 
     const response = await this.complete({
-      model: "gpt-4o-mini",
+      model: DEFAULT_MODEL,
       messages: [
         {
           role: "system",
