@@ -143,3 +143,73 @@ export const insertRunRatingSchema = createInsertSchema(runRatings).omit({
 });
 export type InsertRunRating = z.infer<typeof insertRunRatingSchema>;
 export type RunRating = typeof runRatings.$inferSelect;
+
+// Agent Compose Runs Table (Tri-Agent Composer)
+export const agentComposeRuns = pgTable("agent_compose_runs", {
+  id: serial("id").primaryKey(),
+  status: text("status").notNull().default("pending"), // pending, running, completed, failed
+  stage: text("stage").notNull().default("agent1"), // agent1, agent2, agent3, done
+  progress: integer("progress").notNull().default(0), // 0-100
+  inputRaw: text("input_raw").notNull(),
+  inputGoal: text("input_goal"),
+  inputConstraints: text("input_constraints"),
+  inputOutputFormat: text("input_output_format"),
+  modelConfig: jsonb("model_config").$type<{
+    model: string;
+    temperature: number;
+    maxTokens?: number;
+  }>().notNull(),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  finishedAt: timestamp("finished_at"),
+});
+
+export const insertAgentComposeRunSchema = createInsertSchema(agentComposeRuns).omit({
+  id: true,
+  createdAt: true,
+  finishedAt: true,
+});
+export type InsertAgentComposeRun = z.infer<typeof insertAgentComposeRunSchema>;
+export type AgentComposeRun = typeof agentComposeRuns.$inferSelect;
+
+// Agent Compose Results Table
+export const agentComposeResults = pgTable("agent_compose_results", {
+  id: serial("id").primaryKey(),
+  runId: integer("run_id").references(() => agentComposeRuns.id, { onDelete: "cascade" }).notNull().unique(),
+  agent1Json: jsonb("agent1_json").$type<{
+    system: string;
+    developer: string;
+    user: string;
+    context: string;
+    variables: Array<{ id: string; name: string; value: string }>;
+    modelHints?: string;
+  }>(),
+  agent2Json: jsonb("agent2_json").$type<{
+    criticisms: string[];
+    alternativePrompt: {
+      system: string;
+      developer: string;
+      user: string;
+      context: string;
+    };
+    fixes: string[];
+  }>(),
+  agent3Json: jsonb("agent3_json").$type<{
+    finalPrompt: {
+      system: string;
+      developer: string;
+      user: string;
+      context: string;
+    };
+    finalVariables: Array<{ id: string; name: string; value: string }>;
+    decisionNotes: string[];
+  }>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertAgentComposeResultSchema = createInsertSchema(agentComposeResults).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertAgentComposeResult = z.infer<typeof insertAgentComposeResultSchema>;
+export type AgentComposeResult = typeof agentComposeResults.$inferSelect;

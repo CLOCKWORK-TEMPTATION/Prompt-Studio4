@@ -89,3 +89,59 @@ export interface CritiqueResult {
   rewrittenPrompt?: string;
   reasoning: string;
 }
+
+// Agent Compose Types
+export interface AgentComposeRequest {
+  rawIdea: string;
+  goal?: string;
+  constraints?: string;
+  outputFormat?: string;
+  modelConfig?: {
+    model: string;
+    temperature: number;
+    maxTokens?: number;
+  };
+}
+
+export interface Agent1Output {
+  system: string;
+  developer: string;
+  user: string;
+  context: string;
+  variables: Variable[];
+  modelHints?: string;
+}
+
+export interface Agent2Output {
+  criticisms: string[];
+  alternativePrompt: {
+    system: string;
+    developer: string;
+    user: string;
+    context: string;
+  };
+  fixes: string[];
+}
+
+export interface Agent3Output {
+  finalPrompt: {
+    system: string;
+    developer: string;
+    user: string;
+    context: string;
+  };
+  finalVariables: Variable[];
+  decisionNotes: string[];
+}
+
+export interface AgentComposeStatus {
+  status: "pending" | "running" | "completed" | "failed";
+  stage: "agent1" | "agent2" | "agent3" | "done";
+  progress: number;
+  error?: string;
+  result?: {
+    agent1: Agent1Output;
+    agent2: Agent2Output;
+    agent3: Agent3Output;
+  };
+}

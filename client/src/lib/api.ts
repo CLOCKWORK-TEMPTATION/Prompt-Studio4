@@ -170,3 +170,20 @@ export const aiApi = {
     return handleResponse(response);
   },
 };
+
+// Agent Compose API
+export const agentComposeApi = {
+  start: async (request: import("./types").AgentComposeRequest): Promise<{ runId: number }> => {
+    const response = await fetch(`${API_BASE}/agents/compose`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    return handleResponse(response);
+  },
+
+  getStatus: async (runId: number): Promise<import("./types").AgentComposeStatus> => {
+    const response = await fetch(`${API_BASE}/agents/compose/${runId}`);
+    return handleResponse(response);
+  },
+};

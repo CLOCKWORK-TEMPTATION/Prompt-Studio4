@@ -13,7 +13,11 @@ import type {
   Prompt,
   InsertPrompt,
   PromptVersion,
-  InsertPromptVersion
+  InsertPromptVersion,
+  AgentComposeRun,
+  InsertAgentComposeRun,
+  AgentComposeResult,
+  InsertAgentComposeResult
 } from "@shared/schema";
 import { eq, desc, like, or, sql } from "drizzle-orm";
 
@@ -52,6 +56,13 @@ export interface IStorage {
   // Prompts & Versions (for future use)
   createPrompt(prompt: InsertPrompt): Promise<Prompt>;
   createPromptVersion(version: InsertPromptVersion): Promise<PromptVersion>;
+
+  // Agent Compose
+  createAgentComposeRun(run: InsertAgentComposeRun): Promise<AgentComposeRun>;
+  getAgentComposeRunById(id: number): Promise<AgentComposeRun | undefined>;
+  updateAgentComposeRun(id: number, updates: Partial<InsertAgentComposeRun>): Promise<AgentComposeRun | undefined>;
+  createAgentComposeResult(result: InsertAgentComposeResult): Promise<AgentComposeResult>;
+  getAgentComposeResultByRunId(runId: number): Promise<AgentComposeResult | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -171,6 +182,39 @@ export class DatabaseStorage implements IStorage {
 
   async createPromptVersion(version: InsertPromptVersion): Promise<PromptVersion> {
     const result = await db.insert(schema.promptVersions).values(version as any).returning();
+    return result[0];
+  }
+
+  // Agent Compose
+  async createAgentComposeRun(run: InsertAgentComposeRun): Promise<AgentComposeRun> {
+    const result = await db.insert(schema.agentComposeRuns).values(run as any).returning();
+    return result[0];
+  }
+
+  async getAgentComposeRunById(id: number): Promise<AgentComposeRun | undefined> {
+    const result = await db.select().from(schema.agentComposeRuns).where(eq(schema.agentComposeRuns.id, id));
+    return result[0];
+  }
+
+  async updateAgentComposeRun(id: number, updates: Partial<InsertAgentComposeRun>): Promise<AgentComposeRun | undefined> {
+    const result = await db
+      .update(schema.agentComposeRuns)
+      .set(updates as any)
+      .where(eq(schema.agentComposeRuns.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async createAgentComposeResult(result: InsertAgentComposeResult): Promise<AgentComposeResult> {
+    const dbResult = await db.insert(schema.agentComposeResults).values(result as any).returning();
+    return dbResult[0];
+  }
+
+  async getAgentComposeResultByRunId(runId: number): Promise<AgentComposeResult | undefined> {
+    const result = await db
+      .select()
+      .from(schema.agentComposeResults)
+      .where(eq(schema.agentComposeResults.runId, runId));
     return result[0];
   }
 }

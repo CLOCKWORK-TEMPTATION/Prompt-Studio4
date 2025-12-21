@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { llmProvider } from "./llm-provider";
+import { runAgent1, runAgent2, runAgent3 } from "./agents";
 import { z } from "zod";
 import { insertTemplateSchema, insertTechniqueSchema, insertRunRatingSchema } from "@shared/schema";
 
@@ -342,5 +343,163 @@ export async function registerRoutes(
     }
   });
 
+  // Agent Compose Endpoints
+  const composeSchema = z.object({
+    rawIdea: z.string().min(1),
+    goal: z.string().optional(),
+    constraints: z.string().optional(),
+    outputFormat: z.string().optional(),
+    modelConfig: z.object({
+      model: z.string(),
+      temperature: z.number(),
+      maxTokens: z.number().optional(),
+    }).optional(),
+  });
+
+  app.post("/api/agents/compose", async (req, res) => {
+    try {
+      const validated = composeSchema.parse(req.body);
+
+      // Create a run record
+      const run = await storage.createAgentComposeRun({
+        status: "pending",
+        stage: "agent1",
+        progress: 0,
+        inputRaw: validated.rawIdea,
+        inputGoal: validated.goal,
+        inputConstraints: validated.constraints,
+        inputOutputFormat: validated.outputFormat,
+        modelConfig: validated.modelConfig || {
+          model: "llama-3.3-70b-versatile",
+          temperature: 0.3,
+        } as any,
+      });
+
+      // Start async processing (non-blocking)
+      processAgentCompose(run.id, validated).catch((error) => {
+        console.error("Agent compose failed:", error);
+        storage.updateAgentComposeRun(run.id, {
+          status: "failed",
+          error: error.message,
+        });
+      });
+
+      res.json({ runId: run.id });
+    } catch (error) {
+      console.error("Compose error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to start compose" });
+    }
+  });
+
+  app.get("/api/agents/compose/:runId", async (req, res) => {
+    try {
+      const runId = parseInt(req.params.runId);
+      const run = await storage.getAgentComposeRunById(runId);
+
+      if (!run) {
+        return res.status(404).json({ error: "Run not found" });
+      }
+
+      let result = null;
+      if (run.status === "completed") {
+        result = await storage.getAgentComposeResultByRunId(runId);
+      }
+
+      res.json({
+        status: run.status,
+        stage: run.stage,
+        progress: run.progress,
+        error: run.error,
+        result: result ? {
+          agent1: result.agent1Json,
+          agent2: result.agent2Json,
+          agent3: result.agent3Json,
+        } : null,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get compose status" });
+    }
+  });
+
   return httpServer;
+}
+
+// Helper function: Process agent compose asynchronously
+async function processAgentCompose(
+  runId: number,
+  input: {
+    rawIdea: string;
+    goal?: string;
+    constraints?: string;
+    outputFormat?: string;
+    modelConfig?: { model: string; temperature: number; maxTokens?: number };
+  }
+) {
+  try {
+    // Update status to running
+    await storage.updateAgentComposeRun(runId, {
+      status: "running",
+      stage: "agent1",
+      progress: 10,
+    });
+
+    // Agent 1: Convert
+    const agent1Output = await runAgent1(
+      input.rawIdea,
+      input.goal,
+      input.constraints,
+      input.outputFormat,
+      input.modelConfig
+    );
+
+    await storage.updateAgentComposeRun(runId, {
+      stage: "agent2",
+      progress: 40,
+    });
+
+    // Agent 2: Critique
+    const agent2Output = await runAgent2(
+      agent1Output,
+      input.rawIdea,
+      input.modelConfig
+    );
+
+    await storage.updateAgentComposeRun(runId, {
+      stage: "agent3",
+      progress: 70,
+    });
+
+    // Agent 3: Judge
+    const agent3Output = await runAgent3(
+      agent1Output,
+      agent2Output,
+      input.rawIdea,
+      input.modelConfig
+    );
+
+    await storage.updateAgentComposeRun(runId, {
+      stage: "done",
+      progress: 100,
+      status: "completed",
+      finishedAt: new Date() as any,
+    });
+
+    // Save results
+    await storage.createAgentComposeResult({
+      runId,
+      agent1Json: agent1Output as any,
+      agent2Json: agent2Output as any,
+      agent3Json: agent3Output as any,
+    });
+  } catch (error) {
+    console.error("Agent compose processing failed:", error);
+    await storage.updateAgentComposeRun(runId, {
+      status: "failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    throw error;
+  }
 }
