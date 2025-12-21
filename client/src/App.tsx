@@ -9,6 +9,7 @@ import Templates from "@/pages/Templates";
 import Techniques from "@/pages/Techniques";
 import Runs from "@/pages/Runs";
 import Settings from "@/pages/Settings";
+import Compare from "@/pages/Compare";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -20,6 +21,7 @@ function Router() {
         <Route path="/templates" component={Templates} />
         <Route path="/techniques" component={Techniques} />
         <Route path="/runs" component={Runs} />
+        <Route path="/compare" component={Compare} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

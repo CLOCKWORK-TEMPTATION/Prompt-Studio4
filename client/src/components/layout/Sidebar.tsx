@@ -1,11 +1,12 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Library, BookOpen, History, Settings, Sparkles } from "lucide-react";
+import { LayoutDashboard, Library, BookOpen, History, Settings, Sparkles, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { label: "المحرر", icon: LayoutDashboard, href: "/studio" },
   { label: "القوالب", icon: Library, href: "/templates" },
   { label: "التقنيات", icon: BookOpen, href: "/techniques" },
+  { label: "مقارنة A/B", icon: ArrowLeftRight, href: "/compare" },
   { label: "السجلات", icon: History, href: "/runs" },
   { label: "الإعدادات", icon: Settings, href: "/settings" },
 ];
