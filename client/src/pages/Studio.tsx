@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { aiApi } from "@/lib/api";
 import { PromptSections, Variable, CritiqueResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { TriAgentComposer } from "@/components/TriAgentComposer";
 
 const DEFAULT_SECTIONS: PromptSections = {
   system: "أنت مساعد ذكي ومفيد.",
@@ -123,8 +124,25 @@ export default function Studio() {
     }
   };
 
+  const handleApplyCompose = (newSections: PromptSections, newVariables: Variable[]) => {
+    setSections(newSections);
+    setVariables(newVariables);
+  };
+
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Tri-Agent Composer Section (scrollable) */}
+      <ScrollArea className="max-h-[50vh] border-b">
+        <div className="p-4">
+          <TriAgentComposer
+            onApply={handleApplyCompose}
+            modelConfig={settings}
+          />
+        </div>
+      </ScrollArea>
+
+      {/* Rest of Studio (fixed layout) */}
+      <div className="flex-1 flex flex-col min-h-0">
       {/* Top Bar */}
       <div className="h-14 border-b flex items-center justify-between px-4 bg-background shrink-0">
         <div className="flex items-center gap-4">
@@ -347,6 +365,7 @@ export default function Studio() {
           </Tabs>
         </ResizablePanel>
       </ResizablePanelGroup>
+      </div>
     </div>
   );
 }
