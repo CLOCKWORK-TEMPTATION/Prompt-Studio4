@@ -16,7 +16,7 @@ Preferred communication style: Simple, everyday language.
 - **State Management**: TanStack Query for server state, React useState for local state
 - **UI Components**: shadcn/ui component library with Radix UI primitives
 - **Styling**: Tailwind CSS v4 with CSS variables for theming
-- **Build Tool**: Vite with custom plugins for Replit integration
+- **Build Tool**: Vite with custom plugins for NEXT integration
 
 ### Backend Architecture
 - **Runtime**: Node.js with Express
@@ -74,7 +74,7 @@ shared/           # Shared code between client/server
 - **Session Store**: connect-pg-simple for Express session storage
 
 ### Build & Development
-- **Replit Plugins**: cartographer, dev-banner, runtime-error-modal for enhanced Replit development experience
+- **NEXT Plugins**: cartographer, dev-banner, runtime-error-modal for enhanced NEXT development experience
 - **Custom Vite Plugin**: meta-images plugin for OpenGraph image handling
 
 ### Key NPM Packages
