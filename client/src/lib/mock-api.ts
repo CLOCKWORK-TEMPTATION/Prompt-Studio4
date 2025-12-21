@@ -1,7 +1,7 @@
-import { CritiqueResult, RunResult, PromptSections, ModelSettings, Variable } from "./types";
+import { CritiqueResult, RunResult, PromptSections, ModelSettings, Variable, Template } from "./types";
 
 // Mock Data
-export const MOCK_TEMPLATES = [
+export const MOCK_TEMPLATES: Template[] = [
   {
     id: "1",
     name: "محلل الكود البرمجي",
@@ -14,7 +14,7 @@ export const MOCK_TEMPLATES = [
       user: "قم بتحليل الكود التالي وقدم تقريراً بالمشاكل والحلول المقترحة:\n\n{{code}}",
       context: "اللغة المستخدمة هي TypeScript."
     },
-    defaultVariables: [{ id: "v1", name: "code", value: "console.log('hello')", type: "string" }]
+    defaultVariables: [{ id: "v1", name: "code", value: "console.log('hello')", type: "string" as const }]
   },
   {
     id: "2",
@@ -29,8 +29,8 @@ export const MOCK_TEMPLATES = [
       context: "الجمهور المستهدف هو الشباب من عمر 18-25."
     },
     defaultVariables: [
-      { id: "v1", name: "platform", value: "Twitter", type: "string" },
-      { id: "v2", name: "product_name", value: "سماعات عازلة للضوضاء", type: "string" }
+      { id: "v1", name: "platform", value: "Twitter", type: "string" as const },
+      { id: "v2", name: "product_name", value: "سماعات عازلة للضوضاء", type: "string" as const }
     ]
   },
   {
@@ -45,7 +45,7 @@ export const MOCK_TEMPLATES = [
       user: "حلل البيانات التالية وقدم رؤى قابلة للتنفيذ:\n\n{{data}}",
       context: "التركيز على الاتجاهات والأنماط الرئيسية."
     },
-    defaultVariables: [{ id: "v1", name: "data", value: "", type: "string" }]
+    defaultVariables: [{ id: "v1", name: "data", value: "", type: "string" as const }]
   },
   {
     id: "4",
@@ -60,9 +60,9 @@ export const MOCK_TEMPLATES = [
       context: "المجال التقني: البرمجة والتكنولوجيا."
     },
     defaultVariables: [
-      { id: "v1", name: "source_lang", value: "الإنجليزية", type: "string" },
-      { id: "v2", name: "target_lang", value: "العربية", type: "string" },
-      { id: "v3", name: "text", value: "", type: "string" }
+      { id: "v1", name: "source_lang", value: "الإنجليزية", type: "string" as const },
+      { id: "v2", name: "target_lang", value: "العربية", type: "string" as const },
+      { id: "v3", name: "text", value: "", type: "string" as const }
     ]
   },
   {
@@ -78,8 +78,8 @@ export const MOCK_TEMPLATES = [
       context: "تأكد من تغطية جميع السيناريوهات المحتملة."
     },
     defaultVariables: [
-      { id: "v1", name: "function_code", value: "", type: "string" },
-      { id: "v2", name: "framework", value: "Jest", type: "string" }
+      { id: "v1", name: "function_code", value: "", type: "string" as const },
+      { id: "v2", name: "framework", value: "Jest", type: "string" as const }
     ]
   },
   {
@@ -95,8 +95,8 @@ export const MOCK_TEMPLATES = [
       context: "الهدف: زيادة الترتيب في نتائج البحث."
     },
     defaultVariables: [
-      { id: "v1", name: "keywords", value: "", type: "string" },
-      { id: "v2", name: "article", value: "", type: "string" }
+      { id: "v1", name: "keywords", value: "", type: "string" as const },
+      { id: "v2", name: "article", value: "", type: "string" as const }
     ]
   }
 ];
