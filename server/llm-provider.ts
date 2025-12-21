@@ -41,22 +41,26 @@ export interface CritiqueResponse {
 }
 
 export class LLMProvider {
-  private apiKey: string;
   private baseUrl: string;
 
-  constructor(apiKey?: string, baseUrl?: string) {
-    this.apiKey = apiKey || GROQ_API_KEY || "";
+  constructor(baseUrl?: string) {
     this.baseUrl = baseUrl || GROQ_BASE_URL;
+  }
 
-    if (!this.apiKey) {
-      throw new Error("GROQ_API_KEY environment variable is required");
+  private getApiKey(sessionKey?: string): string {
+    // Priority: session API key > environment secret
+    const key = sessionKey || GROQ_API_KEY;
+    if (!key) {
+      throw new Error("NO_API_KEY");
     }
+    return key;
   }
 
   /**
    * Run a completion request
    */
-  async complete(request: CompletionRequest): Promise<CompletionResponse> {
+  async complete(request: CompletionRequest, sessionKey?: string): Promise<CompletionResponse> {
+    const apiKey = this.getApiKey(sessionKey);
     const startTime = Date.now();
 
     // Convert "developer" role to "system" for API compatibility
@@ -75,7 +79,7 @@ export class LLMProvider {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model,
@@ -114,7 +118,7 @@ export class LLMProvider {
     developer: string;
     user: string;
     context: string;
-  }): Promise<CritiqueResponse> {
+  }, sessionKey?: string): Promise<CritiqueResponse> {
     const critiquePrompt = `أنت خبير في هندسة المطالبات (Prompt Engineering). قم بتحليل المطالبة التالية وتقديم تقييم شامل.
 
 **المطالبة المراد تحليلها:**
@@ -158,7 +162,7 @@ Context: ${prompt.context || "(فارغ)"}
         { role: "user", content: critiquePrompt },
       ],
       temperature: 0.3,
-    });
+    }, sessionKey);
 
     // Parse the JSON response
     try {

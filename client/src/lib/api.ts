@@ -187,3 +187,31 @@ export const agentComposeApi = {
     return handleResponse(response);
   },
 };
+
+// Session API Key Management
+export const sessionApiKeyApi = {
+  activate: async (apiKey: string): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${API_BASE}/session/api-key`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey }),
+      credentials: "include",
+    });
+    return handleResponse(response);
+  },
+
+  clear: async (): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${API_BASE}/session/api-key`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    return handleResponse(response);
+  },
+
+  getStatus: async (): Promise<{ hasSessionKey: boolean; hasEnvironmentKey: boolean; canRun: boolean }> => {
+    const response = await fetch(`${API_BASE}/session/api-key/status`, {
+      credentials: "include",
+    });
+    return handleResponse(response);
+  },
+};

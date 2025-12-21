@@ -259,6 +259,9 @@ export async function registerRoutes(
     try {
       const validated = runSchema.parse(req.body);
 
+      // Get session API key (if any)
+      const sessionKey = req.session?.groqApiKey;
+
       // Substitute variables in all sections
       const processedSections = {
         system: substituteVariables(validated.sections.system, validated.variables),
@@ -291,7 +294,7 @@ export async function registerRoutes(
         messages,
         temperature: validated.temperature,
         max_tokens: validated.maxTokens,
-      });
+      }, sessionKey);
 
       // Save run to database
       const run = await storage.createRun({
@@ -313,9 +316,15 @@ export async function registerRoutes(
         tokenUsage: result.tokenUsage,
       });
     } catch (error) {
-      console.error("Run error:", error);
+      console.error("Run error:", error instanceof Error ? error.message : "Unknown");
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
+      }
+      if (error instanceof Error && error.message === "NO_API_KEY") {
+        return res.status(503).json({
+          error: "مرحلة التشغيل اختيارية. للتجربة، يرجى إدخال مفتاح API الخاص بك في المرحلة 5",
+          code: "NO_API_KEY"
+        });
       }
       if (error instanceof Error && error.message.includes("API error")) {
         return res.status(502).json({ error: error.message });
@@ -328,13 +337,22 @@ export async function registerRoutes(
     try {
       const validated = critiqueSchema.parse(req.body);
 
-      const result = await llmProvider.critique(validated.sections);
+      // Get session API key (if any)
+      const sessionKey = req.session?.groqApiKey;
+
+      const result = await llmProvider.critique(validated.sections, sessionKey);
 
       res.json(result);
     } catch (error) {
-      console.error("Critique error:", error);
+      console.error("Critique error:", error instanceof Error ? error.message : "Unknown");
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
+      }
+      if (error instanceof Error && error.message === "NO_API_KEY") {
+        return res.status(503).json({
+          error: "للتجربة، يرجى إدخال مفتاح API الخاص بك في المرحلة 5",
+          code: "NO_API_KEY"
+        });
       }
       if (error instanceof Error && error.message.includes("API error")) {
         return res.status(502).json({ error: error.message });
@@ -424,6 +442,67 @@ export async function registerRoutes(
     }
   });
 
+  // Session API Key Management
+  app.post("/api/session/api-key", (req, res) => {
+    try {
+      const { apiKey } = req.body;
+      if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
+        return res.status(400).json({ error: "API key is required" });
+      }
+      
+      // Store in session (server-side only, not visible to client)
+      if (req.session) {
+        req.session.groqApiKey = apiKey.trim();
+        req.session.save((err: any) => {
+          if (err) {
+            console.error("Failed to save session:", err?.message || "Unknown error"); // Don't log the key
+            return res.status(500).json({ error: "Failed to activate API key" });
+          }
+          res.json({ success: true, message: "API key activated for this session" });
+        });
+      } else {
+        res.status(500).json({ error: "Session not available" });
+      }
+    } catch (error) {
+      console.error("API key activation error:", error instanceof Error ? error.message : "Unknown");
+      res.status(500).json({ error: "Failed to activate API key" });
+    }
+  });
+
+  app.delete("/api/session/api-key", (req, res) => {
+    try {
+      if (req.session && req.session.groqApiKey) {
+        delete req.session.groqApiKey;
+        req.session.save((err: any) => {
+          if (err) {
+            console.error("Failed to save session:", err?.message || "Unknown error");
+            return res.status(500).json({ error: "Failed to clear API key" });
+          }
+          res.json({ success: true, message: "API key cleared from session" });
+        });
+      } else {
+        res.json({ success: true, message: "No API key in session" });
+      }
+    } catch (error) {
+      console.error("API key clear error:", error instanceof Error ? error.message : "Unknown");
+      res.status(500).json({ error: "Failed to clear API key" });
+    }
+  });
+
+  app.get("/api/session/api-key/status", (req, res) => {
+    try {
+      const hasSessionKey = !!(req.session && req.session.groqApiKey);
+      const hasEnvironmentKey = !!process.env.GROQ_API_KEY;
+      res.json({
+        hasSessionKey,
+        hasEnvironmentKey,
+        canRun: hasSessionKey || hasEnvironmentKey,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check API key status" });
+    }
+  });
+
   return httpServer;
 }
 
@@ -484,7 +563,6 @@ async function processAgentCompose(
       stage: "done",
       progress: 100,
       status: "completed",
-      finishedAt: new Date() as any,
     });
 
     // Save results
