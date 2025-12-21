@@ -1,0 +1,289 @@
+import { useState } from "react";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Play, Save, Wand2, Plus, Trash2, Eye, LayoutTemplate, Copy } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { mockRun, mockCritique } from "@/lib/mock-api";
+import { PromptSections, Variable, CritiqueResult } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+const DEFAULT_SECTIONS: PromptSections = {
+  system: "أنت مساعد ذكي ومفيد.",
+  developer: "تجنب الإجابات الطويلة جداً.",
+  user: "مرحباً، كيف حالك؟",
+  context: ""
+};
+
+export default function Studio() {
+  const [sections, setSections] = useState<PromptSections>(DEFAULT_SECTIONS);
+  const [variables, setVariables] = useState<Variable[]>([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isCritiquing, setIsCritiquing] = useState(false);
+  const [critique, setCritique] = useState<CritiqueResult | null>(null);
+  const [output, setOutput] = useState("");
+  const [settings, setSettings] = useState({ model: "gpt-4o", temperature: 0.7, maxTokens: 1000 });
+  const { toast } = useToast();
+
+  const handleSectionChange = (section: keyof PromptSections, value: string) => {
+    setSections(prev => ({ ...prev, [section]: value }));
+  };
+
+  const addVariable = () => {
+    const id = Math.random().toString(36).substr(2, 5);
+    setVariables([...variables, { id, name: `var_${variables.length + 1}`, value: "" }]);
+  };
+
+  const removeVariable = (id: string) => {
+    setVariables(variables.filter(v => v.id !== id));
+  };
+
+  const updateVariable = (id: string, field: keyof Variable, value: string) => {
+    setVariables(variables.map(v => v.id === id ? { ...v, [field]: value } : v));
+  };
+
+  const runPrompt = async () => {
+    setIsRunning(true);
+    try {
+      const result = await mockRun(sections, variables, settings);
+      setOutput(result.output);
+      toast({ title: "تم التشغيل بنجاح", description: "تم استلام الرد من النموذج." });
+    } catch (e) {
+      toast({ title: "خطأ", description: "فشل الاتصال بالنموذج.", variant: "destructive" });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const runCritique = async () => {
+    setIsCritiquing(true);
+    try {
+      const result = await mockCritique(sections);
+      setCritique(result);
+      toast({ title: "تم التحليل", description: `النتيجة: ${result.score}/100` });
+    } catch (e) {
+      toast({ title: "خطأ", description: "فشل التحليل.", variant: "destructive" });
+    } finally {
+      setIsCritiquing(false);
+    }
+  };
+
+  const getPreview = () => {
+    let text = `${sections.system}\n\n${sections.developer}\n\n${sections.context}\n\n${sections.user}`;
+    variables.forEach(v => {
+      text = text.replace(new RegExp(`{{${v.name}}}`, 'g'), v.value || `{{${v.name}}}`);
+    });
+    return text;
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Top Bar */}
+      <div className="h-14 border-b flex items-center justify-between px-4 bg-background shrink-0">
+        <div className="flex items-center gap-4">
+          <Select value={settings.model} onValueChange={(v) => setSettings({ ...settings, model: v })}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="اختر النموذج" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+              <SelectItem value="claude-3-5-sonnet">Claude 3.5 Sonnet</SelectItem>
+              <SelectItem value="gemini-pro">Gemini Pro</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-2 border-r pr-4 mr-2">
+            <span className="text-sm text-muted-foreground">Temp:</span>
+            <Input 
+              type="number" 
+              className="w-16 h-8 text-xs" 
+              value={settings.temperature} 
+              onChange={e => setSettings({...settings, temperature: parseFloat(e.target.value)})}
+              step={0.1} min={0} max={1}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={runCritique} disabled={isCritiquing}>
+            <Wand2 className="ml-2 size-4" />
+            {isCritiquing ? "جاري التحليل..." : "نقد (Critique)"}
+          </Button>
+          <Button size="sm" onClick={runPrompt} disabled={isRunning} className="bg-primary hover:bg-primary/90">
+            <Play className="ml-2 size-4" />
+            {isRunning ? "جاري التشغيل..." : "تشغيل (Run)"}
+          </Button>
+          <Button variant="ghost" size="icon">
+            <Save className="size-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <ResizablePanelGroup direction="horizontal" className="flex-1">
+        
+        {/* Editor Panel */}
+        <ResizablePanel defaultSize={50} minSize={30}>
+          <Tabs defaultValue="system" className="h-full flex flex-col">
+            <div className="border-b px-4 bg-muted/20">
+              <TabsList className="bg-transparent h-10 w-full justify-start gap-4">
+                <TabsTrigger value="system" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">System</TabsTrigger>
+                <TabsTrigger value="developer" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">Developer</TabsTrigger>
+                <TabsTrigger value="user" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">User</TabsTrigger>
+                <TabsTrigger value="context" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">Context</TabsTrigger>
+                <TabsTrigger value="variables" className="mr-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
+                   المتغيرات ({variables.length})
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <div className="flex-1 p-4 bg-background">
+              {(['system', 'developer', 'user', 'context'] as const).map(section => (
+                <TabsContent key={section} value={section} className="h-full mt-0">
+                  <Textarea 
+                    className="h-full resize-none font-mono text-sm leading-relaxed border-0 focus-visible:ring-0 p-0"
+                    placeholder={`اكتب تعليمات الـ ${section} هنا...`}
+                    value={sections[section]}
+                    onChange={(e) => handleSectionChange(section, e.target.value)}
+                  />
+                </TabsContent>
+              ))}
+
+              <TabsContent value="variables" className="h-full mt-0">
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-semibold">المتغيرات</h3>
+                    <Button onClick={addVariable} size="sm" variant="outline"><Plus className="size-4 ml-2" /> إضافة متغير</Button>
+                  </div>
+                  {variables.length === 0 && (
+                    <div className="text-center text-muted-foreground py-10 border border-dashed rounded-lg">
+                      لا يوجد متغيرات. أضف متغير لاستخدامه بصيغة {'{{var}}'}
+                    </div>
+                  )}
+                  <div className="space-y-3">
+                    {variables.map((v) => (
+                      <div key={v.id} className="flex gap-2 items-start bg-card border rounded-md p-3">
+                        <div className="space-y-2 flex-1">
+                          <Input 
+                            placeholder="اسم المتغير (بدون أقواس)" 
+                            value={v.name} 
+                            onChange={(e) => updateVariable(v.id, 'name', e.target.value)}
+                            className="font-mono text-sm h-8"
+                          />
+                          <Textarea 
+                            placeholder="القيمة الافتراضية" 
+                            value={v.value} 
+                            onChange={(e) => updateVariable(v.id, 'value', e.target.value)}
+                            className="text-sm min-h-[60px]"
+                          />
+                        </div>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => removeVariable(v.id)}>
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </TabsContent>
+            </div>
+          </Tabs>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
+
+        {/* Output/Critique Panel */}
+        <ResizablePanel defaultSize={50} minSize={30}>
+           <Tabs defaultValue="preview" className="h-full flex flex-col">
+            <div className="border-b px-4 bg-muted/20 flex items-center justify-between">
+              <TabsList className="bg-transparent h-10 justify-start gap-4">
+                <TabsTrigger value="preview"><Eye className="ml-2 size-3" /> معاينة</TabsTrigger>
+                <TabsTrigger value="output" className="data-[state=active]:text-green-600"><LayoutTemplate className="ml-2 size-3" /> المخرجات</TabsTrigger>
+                <TabsTrigger value="critique" className={cn(critique ? "text-orange-600" : "")}><Wand2 className="ml-2 size-3" /> النقد والتحسين</TabsTrigger>
+              </TabsList>
+              {critique && <span className="text-xs font-bold text-orange-600 px-2">Score: {critique.score}</span>}
+            </div>
+
+            <TabsContent value="preview" className="flex-1 p-0 m-0 overflow-hidden">
+               <ScrollArea className="h-full p-4">
+                 <pre className="whitespace-pre-wrap font-mono text-sm text-muted-foreground bg-muted/30 p-4 rounded-lg border">
+                   {getPreview()}
+                 </pre>
+               </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="output" className="flex-1 p-0 m-0 overflow-hidden bg-zinc-950 text-zinc-100">
+               {output ? (
+                 <ScrollArea className="h-full p-6">
+                   <div className="prose prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap">
+                     {output}
+                   </div>
+                 </ScrollArea>
+               ) : (
+                 <div className="h-full flex flex-col items-center justify-center text-zinc-500">
+                   <Play className="size-12 mb-4 opacity-20" />
+                   <p>اضغط "تشغيل" لرؤية النتيجة</p>
+                 </div>
+               )}
+            </TabsContent>
+
+            <TabsContent value="critique" className="flex-1 p-0 m-0 overflow-hidden bg-orange-50/50">
+               {critique ? (
+                 <ScrollArea className="h-full p-6">
+                   <div className="space-y-6">
+                     <div className="flex items-center justify-between">
+                        <h3 className="font-bold text-lg">تحليل الجودة</h3>
+                        <div className={cn("px-3 py-1 rounded-full text-sm font-bold", 
+                          critique.score > 80 ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
+                        )}>
+                          {critique.score}/100
+                        </div>
+                     </div>
+                     
+                     <div className="space-y-3">
+                       {critique.issues.map((issue, idx) => (
+                         <div key={idx} className="bg-white border border-orange-200 rounded-lg p-4 shadow-sm">
+                           <div className="flex items-start gap-3">
+                             <div className={cn("size-2 mt-2 rounded-full shrink-0", 
+                               issue.severity === 'high' ? 'bg-red-500' : 'bg-yellow-500'
+                             )} />
+                             <div>
+                               <h4 className="font-semibold text-sm">{issue.title}</h4>
+                               <p className="text-xs text-muted-foreground mt-1">المكان: {issue.section}</p>
+                               <p className="text-sm mt-2 text-zinc-700">{issue.fix}</p>
+                               <Button size="sm" variant="outline" className="mt-3 text-xs h-7 border-orange-200 hover:bg-orange-50 text-orange-700">
+                                 تطبيق الإصلاح
+                               </Button>
+                             </div>
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+
+                     {critique.improvements.length > 0 && (
+                       <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                         <h4 className="font-semibold text-blue-800 text-sm mb-2">مقترحات تحسين عامة</h4>
+                         <ul className="list-disc list-inside text-sm text-blue-700 space-y-1">
+                           {critique.improvements.map((imp, i) => <li key={i}>{imp}</li>)}
+                         </ul>
+                       </div>
+                     )}
+                   </div>
+                 </ScrollArea>
+               ) : (
+                 <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+                   <Wand2 className="size-12 mb-4 opacity-20" />
+                   <p>اضغط "نقد" لتحليل المطالبة</p>
+                 </div>
+               )}
+            </TabsContent>
+           </Tabs>
+        </ResizablePanel>
+
+      </ResizablePanelGroup>
+    </div>
+  );
+}
