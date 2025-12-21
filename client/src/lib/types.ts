@@ -2,6 +2,8 @@ export interface Variable {
   id: string;
   name: string;
   value: string;
+  type?: 'string' | 'number' | 'array' | 'object';
+  description?: string;
 }
 
 export interface PromptSections {
@@ -26,6 +28,13 @@ export interface RunResult {
   timestamp: number;
   rating?: number;
   notes?: string;
+  tokens?: {
+    prompt: number;
+    completion: number;
+    total: number;
+  };
+  cost?: number;
+  duration?: number;
 }
 
 export interface Template {
@@ -44,10 +53,35 @@ export interface CritiqueIssue {
   evidence: string;
   fix: string;
   section: keyof PromptSections;
+  autoFixable?: boolean;
 }
 
 export interface CritiqueResult {
   score: number;
   issues: CritiqueIssue[];
   improvements: string[];
+  metrics?: {
+    clarity: number;
+    specificity: number;
+    structure: number;
+    examples: number;
+  };
+}
+
+export interface PromptVersion {
+  id: string;
+  sections: PromptSections;
+  variables: Variable[];
+  timestamp: number;
+  label?: string;
+  parentId?: string;
+}
+
+export interface TokenEstimate {
+  system: number;
+  developer: number;
+  user: number;
+  context: number;
+  total: number;
+  estimatedCost: number;
 }
