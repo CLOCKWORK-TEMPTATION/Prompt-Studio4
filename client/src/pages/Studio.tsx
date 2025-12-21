@@ -48,9 +48,11 @@ export default function StudioNew() {
   const [outputFormat, setOutputFormat] = useState("");
   const [composeStatus, setComposeStatus] = useState<AgentComposeStatus | null>(null);
 
-  // Stage 3: Edit
+  // Stage 3: Edit (draft/committed pattern)
   const [sections, setSections] = useState<PromptSections>(DEFAULT_SECTIONS);
   const [variables, setVariables] = useState<Variable[]>([]);
+  const [committedSections, setCommittedSections] = useState<PromptSections | null>(null);
+  const [committedVariables, setCommittedVariables] = useState<Variable[] | null>(null);
 
   // Stage 4: Quality
   const [critique, setCritique] = useState<CritiqueResult | null>(null);
@@ -194,6 +196,9 @@ export default function StudioNew() {
   };
 
   const handleSkipToManual = () => {
+    // Initialize committed state for manual workflow
+    setCommittedSections(sections);
+    setCommittedVariables(variables);
     setWorkflowState((prev) => ({ ...prev, currentStage: 3 }));
   };
 
@@ -204,6 +209,8 @@ export default function StudioNew() {
     const { finalPrompt, finalVariables } = composeStatus.result.agent3;
     setSections(finalPrompt);
     setVariables(finalVariables);
+    setCommittedSections(finalPrompt); // Set as committed
+    setCommittedVariables(finalVariables); // Set as committed
     setWorkflowState((prev) => ({
       ...prev,
       composedSections: true,
@@ -228,6 +235,18 @@ export default function StudioNew() {
 
   const handleUpdateVariable = (id: string, field: keyof Variable, value: string) => {
     setVariables(variables.map((v) => (v.id === id ? { ...v, [field]: value } : v)));
+  };
+
+  const handleApplyChanges = () => {
+    setCommittedSections(sections);
+    setCommittedVariables(variables);
+  };
+
+  const handleResetToAgents = () => {
+    if (committedSections && committedVariables) {
+      setSections(committedSections);
+      setVariables(committedVariables);
+    }
   };
 
   // Stage 4 handlers
@@ -336,10 +355,14 @@ export default function StudioNew() {
           <Stage3Edit
             sections={sections}
             variables={variables}
+            committedSections={committedSections || undefined}
+            committedVariables={committedVariables || undefined}
             onSectionChange={handleSectionChange}
             onAddVariable={handleAddVariable}
             onRemoveVariable={handleRemoveVariable}
             onUpdateVariable={handleUpdateVariable}
+            onApplyChanges={handleApplyChanges}
+            onResetToAgents={handleResetToAgents}
           />
         );
       case 4:

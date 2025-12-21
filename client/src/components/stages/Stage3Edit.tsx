@@ -1,28 +1,77 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Check, RotateCcw } from "lucide-react";
 import { PromptSections, Variable } from "@/lib/types";
+import { useToast } from "@/hooks/use-toast";
 
 interface Stage3EditProps {
   sections: PromptSections;
   variables: Variable[];
+  committedSections?: PromptSections;
+  committedVariables?: Variable[];
   onSectionChange: (section: keyof PromptSections, value: string) => void;
   onAddVariable: () => void;
   onRemoveVariable: (id: string) => void;
   onUpdateVariable: (id: string, field: keyof Variable, value: string) => void;
+  onApplyChanges?: () => void;
+  onResetToAgents?: () => void;
 }
 
 export function Stage3Edit({
   sections,
   variables,
+  committedSections,
+  committedVariables,
   onSectionChange,
   onAddVariable,
   onRemoveVariable,
   onUpdateVariable,
+  onApplyChanges,
+  onResetToAgents,
 }: Stage3EditProps) {
+  const { toast } = useToast();
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  useEffect(() => {
+    if (!committedSections) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    const changed =
+      sections.system !== committedSections.system ||
+      sections.developer !== committedSections.developer ||
+      sections.user !== committedSections.user ||
+      sections.context !== committedSections.context ||
+      JSON.stringify(variables) !== JSON.stringify(committedVariables);
+
+    setHasUnsavedChanges(changed);
+  }, [sections, variables, committedSections, committedVariables]);
+
+  const handleApply = () => {
+    if (onApplyChanges) {
+      onApplyChanges();
+      toast({
+        title: "تم تطبيق التعديلات",
+        description: "تم حفظ التعديلات بنجاح",
+      });
+    }
+  };
+
+  const handleReset = () => {
+    if (onResetToAgents) {
+      onResetToAgents();
+      toast({
+        title: "تم إعادة الضبط",
+        description: "تم إعادة الضبط إلى ناتج الوكلاء الأصلي",
+      });
+    }
+  };
+
   const getPreview = () => {
     let text = `${sections.system}\n\n${sections.developer}\n\n${sections.context}\n\n${sections.user}`;
     variables.forEach(v => {
@@ -34,6 +83,36 @@ export function Stage3Edit({
   return (
     <Card data-testid="stage-3-edit">
       <CardContent className="p-6">
+        {/* Apply/Reset Buttons */}
+        {committedSections && (
+          <div className="flex gap-2 mb-4 pb-4 border-b">
+            <Button
+              onClick={handleApply}
+              disabled={!hasUnsavedChanges}
+              variant="default"
+              size="sm"
+              data-testid="button-apply-changes"
+            >
+              <Check className="ml-2 size-4" />
+              تطبيق التعديلات
+            </Button>
+            <Button
+              onClick={handleReset}
+              variant="outline"
+              size="sm"
+              data-testid="button-reset-to-agents"
+            >
+              <RotateCcw className="ml-2 size-4" />
+              إعادة ضبط إلى ناتج الوكلاء
+            </Button>
+            {hasUnsavedChanges && (
+              <span className="text-xs text-amber-600 flex items-center mr-2">
+                • لديك تعديلات غير محفوظة
+              </span>
+            )}
+          </div>
+        )}
+
         <Tabs defaultValue="system" className="w-full">
           <TabsList className="w-full justify-start mb-4">
             <TabsTrigger value="system">System</TabsTrigger>
