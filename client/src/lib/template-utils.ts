@@ -75,7 +75,7 @@ export function exportCurrentPrompt(
   tags: string[] = []
 ): Template {
   return {
-    id: `custom_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    id: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     name,
     description,
     category,

@@ -312,7 +312,7 @@ export const mockRun = async (sections: PromptSections, vars: Variable[], settin
   const estimatedCost = totalTokens * costPerToken;
   
   return {
-    id: Math.random().toString(36).substr(2, 9),
+    id: Math.random().toString(36).substring(2, 11),
     promptVersion: sections,
     variables: vars,
     settings,

@@ -12,7 +12,7 @@ export function saveVersion(
   parentId?: string
 ): PromptVersion {
   const version: PromptVersion = {
-    id: `v_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    id: `v_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     sections: { ...sections },
     variables: [...variables],
     timestamp: Date.now(),

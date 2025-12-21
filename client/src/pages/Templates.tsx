@@ -59,7 +59,7 @@ export default function Templates() {
       const template = importTemplate(content);
       
       // Generate new ID for imported template
-      template.id = `imported_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      template.id = `imported_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       
       saveCustomTemplate(template);
       setCustomTemplates(getCustomTemplates());

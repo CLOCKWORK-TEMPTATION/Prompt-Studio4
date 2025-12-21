@@ -16,6 +16,7 @@ import { calculateTokenEstimate, formatCost } from "@/lib/token-utils";
 import { saveVersion, getVersionHistory, formatVersionTimestamp } from "@/lib/version-utils";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const DEFAULT_SECTIONS: PromptSections = {
   system: "أنت مساعد ذكي ومفيد.",
@@ -35,6 +36,8 @@ export default function Studio() {
   const [tokenEstimate, setTokenEstimate] = useState<TokenEstimate | null>(null);
   const [versionHistory, setVersionHistory] = useState(getVersionHistory());
   const [lastRunResult, setLastRunResult] = useState<any>(null);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [versionLabel, setVersionLabel] = useState("");
   const { toast } = useToast();
 
   // Update token estimate when sections or settings change
@@ -48,7 +51,7 @@ export default function Studio() {
   };
 
   const addVariable = () => {
-    const id = Math.random().toString(36).substr(2, 5);
+    const id = Math.random().toString(36).substring(2, 7);
     setVariables([...variables, { id, name: `var_${variables.length + 1}`, value: "" }]);
   };
 
@@ -104,9 +107,14 @@ export default function Studio() {
   };
 
   const handleSaveVersion = () => {
-    const label = prompt("اسم هذه النسخة (اختياري):");
-    saveVersion(sections, variables, label || undefined);
+    setShowSaveDialog(true);
+  };
+
+  const confirmSaveVersion = () => {
+    saveVersion(sections, variables, versionLabel || undefined);
     setVersionHistory(getVersionHistory());
+    setShowSaveDialog(false);
+    setVersionLabel("");
     toast({ title: "تم الحفظ", description: "تم حفظ النسخة في السجل" });
   };
 
@@ -488,6 +496,38 @@ export default function Studio() {
         </ResizablePanel>
 
       </ResizablePanelGroup>
+
+      {/* Save Version Dialog */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>حفظ نسخة جديدة</DialogTitle>
+            <DialogDescription>
+              أدخل اسماً لهذه النسخة (اختياري)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              placeholder="مثال: نسخة محسّنة 1"
+              value={versionLabel}
+              onChange={(e) => setVersionLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  confirmSaveVersion();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveDialog(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={confirmSaveVersion}>
+              حفظ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
