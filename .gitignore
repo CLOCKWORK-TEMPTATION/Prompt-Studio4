@@ -186,3 +186,40 @@ demo_output/
 # Cursor IDE global storage
 **/AppData/Roaming/Cursor/User/globalStorage/
 **/globalStorage/
+
+# ==============================================================================
+# SENSITIVE SETUP FILES & EXAMPLES
+# ==============================================================================
+checkpoint_agents_setup.md
+setup_api_keys.md
+agent_example.py
+agent_example_windows.py
+advanced_agent_example.py
+demo_agent.py
+
+# ==============================================================================
+# DEVELOPMENT & TESTING FILES
+# ==============================================================================
+# Migration snapshots (contain schema details)
+migrations/meta/*.json
+
+# Package lock files (can contain registry info)
+package-lock.json
+
+# ==============================================================================
+# TEMPORARY DIRECTORIES
+# ==============================================================================
+temp-promptstudio/
+temp/
+.temp/
+
+# ==============================================================================
+# ADDITIONAL SENSITIVE PATTERNS
+# ==============================================================================
+# Any file containing API keys or credentials
+*api_key*
+*credential*
+*secret*
+*.csv
+*.key.json
+bedrock-*.csv
