@@ -106,9 +106,6 @@
   },
   "devDependencies": {
     "@jest/globals": "^30.2.0",
-    "@NEXT/vite-plugin-cartographer": "^0.4.4",
-    "@NEXT/vite-plugin-dev-banner": "^0.1.1",
-    "@NEXT/vite-plugin-runtime-error-modal": "^0.0.4",
     "@tailwindcss/vite": "^4.1.14",
     "@types/connect-pg-simple": "^7.0.3",
     "@types/cors": "^2.8.17",
