@@ -1,7 +1,12 @@
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { setupWebSocket } from "./websocket";
+import { initializeCacheCleanup, shutdownCacheCleanup } from "./services/CacheCleanupScheduler";
 
 const app = express();
 const httpServer = createServer(app);
@@ -21,6 +26,42 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// CORS configuration
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000,http://localhost:3001,http://localhost:5000")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  }),
+);
+
+// Session configuration (PostgreSQL store)
+const PgSession = connectPgSimple(session);
+app.set("trust proxy", 1);
+app.use(
+  session({
+    store: new PgSession({
+      conString: process.env.DATABASE_URL,
+      createTableIfMissing: true,
+      tableName: "session",
+    }),
+    secret: process.env.SESSION_SECRET || "dev-session-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 1000 * 60 * 60 * 24, // 1 day
+    },
+    name: "psid",
+  }),
+);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -62,6 +103,14 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
 
+  // Setup WebSocket server
+  setupWebSocket(httpServer);
+  log("WebSocket server initialized", "websocket");
+
+  // Initialize cache cleanup scheduler (disabled for testing)
+  // initializeCacheCleanup();
+  // log("Cache cleanup scheduler initialized", "cache");
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -80,11 +129,11 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
+  // ALWAYS serve the app on port 3001 for development, 5000 for production
+  // Other ports are firewalled. Default to 3001 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = parseInt(process.env.PORT || "3001", 10);
   httpServer.listen(
     {
       port,
@@ -95,4 +144,28 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  // Graceful shutdown handler
+  const gracefulShutdown = (signal: string) => {
+    log(`${signal} received, shutting down gracefully...`, "server");
+    
+    // إيقاف مُجدول التنظيف
+    shutdownCacheCleanup();
+    log("Cache cleanup scheduler stopped", "cache");
+    
+    // إغلاق الخادم
+    httpServer.close(() => {
+      log("HTTP server closed", "server");
+      process.exit(0);
+    });
+
+    // إجبار الإغلاق بعد 10 ثواني
+    setTimeout(() => {
+      log("Forcing shutdown...", "server");
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 })();

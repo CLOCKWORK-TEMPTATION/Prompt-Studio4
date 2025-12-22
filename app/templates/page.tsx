@@ -1,8 +1,10 @@
+"use client";
+
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Copy, Edit, Trash, Loader2 } from "lucide-react";
+import { Search, Copy, Edit, Trash2, Loader2 } from "lucide-react";
 import { templatesApi } from "@/lib/api";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";

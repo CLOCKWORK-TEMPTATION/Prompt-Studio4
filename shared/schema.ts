@@ -1,7 +1,12 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, jsonb, serial } from "drizzle-orm/pg-core";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, doublePrecision, primaryKey, unique, real } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { sql } from "drizzle-orm";
+
+// ============================================================
+// EXISTING TABLES (Preserved)
+// ============================================================
 
 // Templates Table
 export const templates = pgTable("templates", {
@@ -50,52 +55,165 @@ export const insertTechniqueSchema = createInsertSchema(techniques).omit({
 export type InsertTechnique = z.infer<typeof insertTechniqueSchema>;
 export type Technique = typeof techniques.$inferSelect;
 
-// Prompts Table (stores user prompts/projects)
-export const prompts = pgTable("prompts", {
-  id: serial("id").primaryKey(),
+// ============================================================
+// MERGED & NEW TABLES (PromptStudio Integration)
+// ============================================================
+
+// Tenants
+export const tenants = pgTable("tenants", {
+  id: text("id").primaryKey(),
   name: text("name").notNull(),
-  description: text("description"),
+  domain: text("domain").unique(),
+  apiKey: text("api_key").unique().notNull(),
+  config: jsonb("config").default({}),
+  isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const insertPromptSchema = createInsertSchema(prompts).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+// Users
+export const users = pgTable("users", {
+  id: text("id").primaryKey(),
+  email: text("email").unique().notNull(),
+  name: text("name").notNull(),
+  avatar: text("avatar"),
+  color: text("color").default("#3B82F6"),
+  tenantId: text("tenant_id").references(() => tenants.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
-export type InsertPrompt = z.infer<typeof insertPromptSchema>;
-export type Prompt = typeof prompts.$inferSelect;
 
-// Prompt Versions Table (tracks changes to prompts)
+// Prompts Table (Merged - Upgraded to UUID support while keeping compatibility concepts)
+// Note: We use text("id") for UUID compatibility across the new system.
+export const prompts = pgTable("prompts", {
+  id: text("id").primaryKey(), // Changed from serial to text/uuid for compatibility
+  name: text("name").notNull(),
+  description: text("description"),
+  tenantId: text("tenant_id").references(() => tenants.id),
+  ownerId: text("owner_id").references(() => users.id),
+  activeVersionId: text("active_version_id"), // Circular reference handled in code or via separate update
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Prompt Versions (Merged)
 export const promptVersions = pgTable("prompt_versions", {
-  id: serial("id").primaryKey(),
-  promptId: integer("prompt_id").references(() => prompts.id, { onDelete: "cascade" }),
+  id: text("id").primaryKey(), // Changed from serial
+  promptId: text("prompt_id").references(() => prompts.id, { onDelete: "cascade" }),
+  version: integer("version").notNull().default(1),
+  content: text("content"), // For simple prompts
+  // Structured prompts
   sections: jsonb("sections").$type<{
     system: string;
     developer: string;
     user: string;
     context: string;
-  }>().notNull(),
+  }>(),
   variables: jsonb("variables").$type<Array<{
     id: string;
     name: string;
     value: string;
-  }>>().notNull().default(sql`'[]'::jsonb`),
+  }>>().default(sql`'[]'::jsonb`),
+  // Analytics
+  performanceMetrics: jsonb("performance_metrics").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertPromptVersionSchema = createInsertSchema(promptVersions).omit({
-  id: true,
-  createdAt: true,
+// Collaboration Sessions
+export const collaborationSessions = pgTable("collaboration_sessions", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  content: text("content").default(""),
+  isActive: boolean("is_active").default(true),
+  shareToken: text("share_token").unique().notNull(),
+  tenantId: text("tenant_id").references(() => tenants.id),
+  ownerId: text("owner_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
-export type InsertPromptVersion = z.infer<typeof insertPromptVersionSchema>;
-export type PromptVersion = typeof promptVersions.$inferSelect;
 
-// Runs Table (execution history)
-export const runs = pgTable("runs", {
+// Session Members
+export const sessionMembers = pgTable("session_members", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  sessionId: text("session_id").references(() => collaborationSessions.id, { onDelete: "cascade" }).notNull(),
+  role: text("role").default("VIEWER"), // OWNER, EDITOR, VIEWER
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+});
+
+// Edit History
+export const editHistory = pgTable("edit_history", {
   id: serial("id").primaryKey(),
-  promptVersionId: integer("prompt_version_id").references(() => promptVersions.id, { onDelete: "set null" }),
+  sessionId: text("session_id").references(() => collaborationSessions.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  operation: jsonb("operation").notNull(),
+  contentBefore: text("content_before"),
+  contentAfter: text("content_after"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Semantic Cache
+export const semanticCache = pgTable("semantic_cache", {
+  id: text("id").primaryKey(),
+  prompt: text("prompt").notNull(),
+  promptHash: text("prompt_hash").notNull(),
+  embedding: jsonb("embedding").notNull(), // Vector stored as JSON array for now
+  response: text("response").notNull(),
+  model: text("model").notNull(),
+  hitCount: integer("hit_count").default(0),
+  tokensSaved: integer("tokens_saved").default(0),
+  userId: text("user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastAccessedAt: timestamp("last_accessed_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+
+export const cacheTags = pgTable("cache_tags", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  cacheId: text("cache_id").references(() => semanticCache.id, { onDelete: "cascade" }).notNull(),
+});
+
+export const cacheStatistics = pgTable("cache_statistics", {
+  id: serial("id").primaryKey(),
+  date: timestamp("date").notNull().unique(),
+  totalHits: integer("total_hits").default(0).notNull(),
+  totalMisses: integer("total_misses").default(0).notNull(),
+  tokensSaved: integer("tokens_saved").default(0).notNull(),
+  costSaved: doublePrecision("cost_saved").default(0).notNull(),
+});
+
+export const cacheConfig = pgTable("cache_config", {
+  id: serial("id").primaryKey(),
+  enabled: boolean("enabled").default(true).notNull(),
+  similarityThreshold: doublePrecision("similarity_threshold").default(0.85).notNull(),
+  defaultTTLSeconds: integer("default_ttl_seconds").default(3600).notNull(),
+  maxCacheSize: integer("max_cache_size").default(1000).notNull(),
+  invalidationRules: jsonb("invalidation_rules").$type<any[]>().default(sql`'[]'::jsonb`),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Marketplace Prompts
+export const marketplacePrompts = pgTable("marketplace_prompts", {
+  id: text("id").primaryKey(),
+  authorId: text("author_id").references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  content: text("content").notNull(),
+  category: text("category").notNull(),
+  tags: jsonb("tags").$type<string[]>().default(sql`'[]'::jsonb`),
+  isFeatured: boolean("is_featured").default(false),
+  status: text("status").default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Runs (Execution History) - Updated to link to new promptVersions
+export const runs = pgTable("runs", {
+  id: serial("id").primaryKey(), // Keeping serial for legacy compatibility or change to text if needed
+  promptVersionId: text("prompt_version_id").references(() => promptVersions.id, { onDelete: "set null" }),
   sections: jsonb("sections").$type<{
     system: string;
     developer: string;
@@ -108,48 +226,58 @@ export const runs = pgTable("runs", {
     value: string;
   }>>().notNull().default(sql`'[]'::jsonb`),
   model: text("model").notNull(),
-  temperature: integer("temperature").notNull(), // stored as int (temp * 100)
+  temperature: integer("temperature").notNull(),
   maxTokens: integer("max_tokens"),
   output: text("output").notNull(),
-  latency: integer("latency"), // milliseconds
-  tokenUsage: jsonb("token_usage").$type<{
-    prompt: number;
-    completion: number;
-    total: number;
-  }>(),
+  latency: integer("latency"),
+  tokenUsage: jsonb("token_usage"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertRunSchema = createInsertSchema(runs).omit({
-  id: true,
-  createdAt: true,
-});
+// Zod Schemas
+export const insertTenantSchema = createInsertSchema(tenants);
+export const insertUserSchema = createInsertSchema(users);
+export const insertPromptSchema = createInsertSchema(prompts);
+export const insertPromptVersionSchema = createInsertSchema(promptVersions);
+export const insertCollaborationSessionSchema = createInsertSchema(collaborationSessions);
+export const insertSemanticCacheSchema = createInsertSchema(semanticCache);
+export const insertMarketplacePromptSchema = createInsertSchema(marketplacePrompts);
+export const insertRunSchema = createInsertSchema(runs);
+
+export type InsertTenant = z.infer<typeof insertTenantSchema>;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertPrompt = z.infer<typeof insertPromptSchema>;
+export type InsertPromptVersion = z.infer<typeof insertPromptVersionSchema>;
+export type InsertCollaborationSession = z.infer<typeof insertCollaborationSessionSchema>;
+export type InsertSemanticCache = z.infer<typeof insertSemanticCacheSchema>;
 export type InsertRun = z.infer<typeof insertRunSchema>;
+
+// Types
+export type Tenant = typeof tenants.$inferSelect;
+export type User = typeof users.$inferSelect;
+export type Prompt = typeof prompts.$inferSelect;
+export type PromptVersion = typeof promptVersions.$inferSelect;
+export type CollaborationSession = typeof collaborationSessions.$inferSelect;
+export type SemanticCache = typeof semanticCache.$inferSelect;
+export type MarketplacePrompt = typeof marketplacePrompts.$inferSelect;
 export type Run = typeof runs.$inferSelect;
 
-// Run Ratings Table (user feedback on runs)
+// Run Ratings (Feedback)
 export const runRatings = pgTable("run_ratings", {
   id: serial("id").primaryKey(),
   runId: integer("run_id").references(() => runs.id, { onDelete: "cascade" }).notNull(),
-  rating: integer("rating"), // 1-5 stars
+  rating: integer("rating"),
   notes: text("notes"),
-  tags: jsonb("tags").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  tags: jsonb("tags").$type<string[]>().default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertRunRatingSchema = createInsertSchema(runRatings).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertRunRating = z.infer<typeof insertRunRatingSchema>;
-export type RunRating = typeof runRatings.$inferSelect;
-
-// Agent Compose Runs Table (Tri-Agent Composer)
+// Agent Compose Runs (Tri-Agent Composer)
 export const agentComposeRuns = pgTable("agent_compose_runs", {
   id: serial("id").primaryKey(),
-  status: text("status").notNull().default("pending"), // pending, running, completed, failed
-  stage: text("stage").notNull().default("agent1"), // agent1, agent2, agent3, done
-  progress: integer("progress").notNull().default(0), // 0-100
+  status: text("status").default("pending").notNull(),
+  stage: text("stage").default("agent1").notNull(),
+  progress: integer("progress").default(0).notNull(),
   inputRaw: text("input_raw").notNull(),
   inputGoal: text("input_goal"),
   inputConstraints: text("input_constraints"),
@@ -164,15 +292,7 @@ export const agentComposeRuns = pgTable("agent_compose_runs", {
   finishedAt: timestamp("finished_at"),
 });
 
-export const insertAgentComposeRunSchema = createInsertSchema(agentComposeRuns).omit({
-  id: true,
-  createdAt: true,
-  finishedAt: true,
-});
-export type InsertAgentComposeRun = z.infer<typeof insertAgentComposeRunSchema>;
-export type AgentComposeRun = typeof agentComposeRuns.$inferSelect;
-
-// Agent Compose Results Table
+// Agent Compose Results
 export const agentComposeResults = pgTable("agent_compose_results", {
   id: serial("id").primaryKey(),
   runId: integer("run_id").references(() => agentComposeRuns.id, { onDelete: "cascade" }).notNull().unique(),
@@ -207,9 +327,14 @@ export const agentComposeResults = pgTable("agent_compose_results", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertAgentComposeResultSchema = createInsertSchema(agentComposeResults).omit({
-  id: true,
-  createdAt: true,
-});
+export const insertRunRatingSchema = createInsertSchema(runRatings);
+export const insertAgentComposeRunSchema = createInsertSchema(agentComposeRuns);
+export const insertAgentComposeResultSchema = createInsertSchema(agentComposeResults);
+
+export type InsertRunRating = z.infer<typeof insertRunRatingSchema>;
+export type InsertAgentComposeRun = z.infer<typeof insertAgentComposeRunSchema>;
 export type InsertAgentComposeResult = z.infer<typeof insertAgentComposeResultSchema>;
+
+export type RunRating = typeof runRatings.$inferSelect;
+export type AgentComposeRun = typeof agentComposeRuns.$inferSelect;
 export type AgentComposeResult = typeof agentComposeResults.$inferSelect;

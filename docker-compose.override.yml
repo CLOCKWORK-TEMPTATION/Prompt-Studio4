@@ -1,0 +1,33 @@
+# Development overrides for docker-compose.yml
+# This file is automatically loaded by docker-compose
+
+version: '3.8'
+
+services:
+  app:
+    environment:
+      - NODE_ENV=development
+      - DEBUG=true
+      - LOG_API_REQUESTS=true
+      - ENABLE_PERFORMANCE_MONITORING=true
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+
+  # Development database with persistent data
+  db:
+    volumes:
+      - ./dev-data/postgres:/var/lib/postgresql/data
+
+  # Development Redis with persistent data
+  redis:
+    volumes:
+      - ./dev-data/redis:/data
+
+  # Enable development tools
+  pgadmin:
+    profiles: []  # Always enable in development
+
+  redis-commander:
+    profiles: []  # Always enable in development

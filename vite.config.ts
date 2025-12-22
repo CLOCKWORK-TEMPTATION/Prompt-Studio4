@@ -12,15 +12,15 @@ export default defineConfig({
     tailwindcss(),
     metaImagesPlugin(),
     ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
+      process.env.REPL_ID !== undefined
       ? [
-          await import("@NEXT/vite-plugin-cartographer").then((m) =>
-            m.cartographer(),
-          ),
-          await import("@NEXT/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
-          ),
-        ]
+        await import("@NEXT/vite-plugin-cartographer").then((m) =>
+          m.cartographer(),
+        ),
+        await import("@NEXT/vite-plugin-dev-banner").then((m) =>
+          m.devBanner(),
+        ),
+      ]
       : []),
   ],
   resolve: {
@@ -42,6 +42,17 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/socket.io': {
+        target: 'http://localhost:3001',
+        ws: true,
+      },
+    },
     allowedHosts: true,
     fs: {
       strict: true,

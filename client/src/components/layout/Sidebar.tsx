@@ -1,12 +1,29 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Library, BookOpen, History, Settings, Sparkles } from "lucide-react";
+import { 
+  LayoutDashboard, 
+  Library, 
+  BookOpen, 
+  History, 
+  Settings, 
+  Sparkles, 
+  BarChart2,
+  Users,
+  Code,
+  Cloud,
+  Edit3
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { label: "المحرر", icon: LayoutDashboard, href: "/studio" },
+  { label: "المحرر المتقدم", icon: Edit3, href: "/advanced-editor" },
+  { label: "التعاون الحي", icon: Users, href: "/collaboration" },
   { label: "القوالب", icon: Library, href: "/templates" },
   { label: "التقنيات", icon: BookOpen, href: "/techniques" },
   { label: "السجلات", icon: History, href: "/runs" },
+  { label: "التحليلات", icon: BarChart2, href: "/analytics" },
+  { label: "توليد SDK", icon: Code, href: "/sdk-generator" },
+  { label: "النشر السحابي", icon: Cloud, href: "/cloud-deployment" },
   { label: "الإعدادات", icon: Settings, href: "/settings" },
 ];
 

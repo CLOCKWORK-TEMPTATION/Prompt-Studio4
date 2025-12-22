@@ -1,0 +1,159 @@
+import * as Y from 'yjs';
+import { redis } from '../../lib/redis';
+
+interface DocumentState {
+    doc: Y.Doc;
+    lastModified: number;
+    pendingUpdates: Uint8Array[];
+}
+
+export class CRDTManager {
+    private documents: Map<string, DocumentState> = new Map();
+    private readonly PERSIST_INTERVAL = 5000; // 5 seconds
+    private persistTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+
+    async getDocument(sessionId: string): Promise<Y.Doc> {
+        let state = this.documents.get(sessionId);
+
+        if (!state) {
+            const doc = new Y.Doc();
+
+            // Try to load from Redis first
+            const savedState = await redis.getBuffer(`crdt:${sessionId}`);
+            if (savedState) {
+                Y.applyUpdate(doc, savedState);
+            }
+
+            state = {
+                doc,
+                lastModified: Date.now(),
+                pendingUpdates: [],
+            };
+
+            this.documents.set(sessionId, state);
+
+            // Set up persistence
+            this.setupPersistence(sessionId);
+        }
+
+        return state.doc;
+    }
+
+    async applyUpdate(sessionId: string, update: Uint8Array, origin?: string): Promise<void> {
+        const doc = await this.getDocument(sessionId);
+        const state = this.documents.get(sessionId)!;
+
+        Y.applyUpdate(doc, update, origin);
+        state.lastModified = Date.now();
+        state.pendingUpdates.push(update);
+
+        // Schedule persistence
+        this.schedulePersistence(sessionId);
+    }
+
+    async getStateVector(sessionId: string): Promise<Uint8Array> {
+        const doc = await this.getDocument(sessionId);
+        return Y.encodeStateVector(doc);
+    }
+
+    async getStateAsUpdate(sessionId: string, targetStateVector?: Uint8Array): Promise<Uint8Array> {
+        const doc = await this.getDocument(sessionId);
+        return Y.encodeStateAsUpdate(doc, targetStateVector);
+    }
+
+    async getText(sessionId: string): Promise<string> {
+        const doc = await this.getDocument(sessionId);
+        const text = doc.getText('content');
+        return text.toString();
+    }
+
+    async setText(sessionId: string, content: string): Promise<Uint8Array> {
+        const doc = await this.getDocument(sessionId);
+        const text = doc.getText('content');
+
+        doc.transact(() => {
+            text.delete(0, text.length);
+            text.insert(0, content);
+        });
+
+        const state = this.documents.get(sessionId)!;
+        state.lastModified = Date.now();
+
+        return Y.encodeStateAsUpdate(doc);
+    }
+
+    private setupPersistence(sessionId: string): void {
+        const state = this.documents.get(sessionId);
+        if (!state) return;
+
+        // Listen for updates
+        state.doc.on('update', (update: Uint8Array, _origin: unknown) => {
+            state.pendingUpdates.push(update);
+            this.schedulePersistence(sessionId);
+        });
+    }
+
+    private schedulePersistence(sessionId: string): void {
+        // Clear existing timer
+        const existingTimer = this.persistTimers.get(sessionId);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
+
+        // Schedule new persistence
+        const timer = setTimeout(() => {
+            this.persistDocument(sessionId);
+        }, this.PERSIST_INTERVAL);
+
+        this.persistTimers.set(sessionId, timer);
+    }
+
+    private async persistDocument(sessionId: string): Promise<void> {
+        const state = this.documents.get(sessionId);
+        if (!state) return;
+
+        try {
+            const fullState = Y.encodeStateAsUpdate(state.doc);
+            // Convert Uint8Array to Buffer for redis storage
+            const buffer = Buffer.from(fullState as Uint8Array) as unknown as string;
+            await redis.set(`crdt:${sessionId}`, buffer, 'EX', 86400); // 24 hours
+
+            // Clear pending updates after successful persist
+            state.pendingUpdates = [];
+
+            console.log(`📦 Persisted CRDT document for session ${sessionId}`);
+        } catch (error) {
+            console.error(`Error persisting CRDT document for session ${sessionId}:`, error);
+        }
+    }
+
+    async syncWithClient(sessionId: string, clientStateVector: Uint8Array): Promise<Uint8Array> {
+        const doc = await this.getDocument(sessionId);
+        return Y.encodeStateAsUpdate(doc, clientStateVector);
+    }
+
+    async mergeClientState(sessionId: string, clientUpdate: Uint8Array): Promise<void> {
+        await this.applyUpdate(sessionId, clientUpdate, 'client');
+    }
+
+    removeDocument(sessionId: string): void {
+        const state = this.documents.get(sessionId);
+        if (state) {
+            // Persist before removing
+            this.persistDocument(sessionId);
+
+            // Clear timer
+            const timer = this.persistTimers.get(sessionId);
+            if (timer) {
+                clearTimeout(timer);
+                this.persistTimers.delete(sessionId);
+            }
+
+            // Destroy doc
+            state.doc.destroy();
+            this.documents.delete(sessionId);
+        }
+    }
+}
+
+export default CRDTManager;

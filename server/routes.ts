@@ -5,6 +5,12 @@ import { llmProvider } from "./llm-provider";
 import { runAgent1, runAgent2, runAgent3 } from "./agents";
 import { z } from "zod";
 import { insertTemplateSchema, insertTechniqueSchema, insertRunRatingSchema } from "@shared/schema";
+import { registerSDKRoutes } from "./routes/sdk";
+import { semanticCacheService } from "./services/SemanticCacheService";
+import { cacheCleanupScheduler } from "./services/CacheCleanupScheduler";
+import { SDKGenerator } from "./lib/sdk-generator/advanced-index";
+import { runtimeTester } from "./lib/sdk-generator/__tests__/runtime-tester";
+import crypto from "crypto";
 
 // Helper to substitute variables in text
 function substituteVariables(
@@ -37,7 +43,7 @@ const runSchema = z.object({
   model: z.string(),
   temperature: z.number().min(0).max(2),
   maxTokens: z.number().optional(),
-  promptVersionId: z.number().optional().nullable(),
+  promptVersionId: z.string().optional().nullable(),
 });
 
 const critiqueSchema = z.object({
@@ -53,6 +59,11 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Health check endpoint for containers and monitoring
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, status: "healthy", timestamp: new Date().toISOString() });
+  });
+
   // Templates CRUD
   app.get("/api/templates", async (req, res) => {
     try {
@@ -449,7 +460,7 @@ export async function registerRoutes(
       if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
         return res.status(400).json({ error: "API key is required" });
       }
-      
+
       // Store in session (server-side only, not visible to client)
       if (req.session) {
         req.session.groqApiKey = apiKey.trim();
@@ -503,8 +514,430 @@ export async function registerRoutes(
     }
   });
 
+
+  // ============================================================
+  // Semantic Cache API
+  // ============================================================
+  
+  // البحث في التخزين المؤقت
+  app.post("/api/cache/lookup", async (req, res) => {
+    try {
+      const result = await semanticCacheService.lookup(req.body);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Cache lookup failed" });
+    }
+  });
+
+  // حفظ في التخزين المؤقت
+  app.post("/api/cache/store", async (req, res) => {
+    try {
+      const entry = await semanticCacheService.store(req.body);
+      res.json(entry);
+    } catch (error) {
+      res.status(500).json({ error: "Cache store failed" });
+    }
+  });
+
+  // الحصول على التكوينات
+  app.get("/api/cache/config", async (req, res) => {
+    try {
+      const config = await semanticCacheService.getConfig();
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get cache config" });
+    }
+  });
+
+  // تحديث التكوينات
+  app.put("/api/cache/config", async (req, res) => {
+    try {
+      const config = await semanticCacheService.updateConfig(req.body);
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update cache config" });
+    }
+  });
+
+  // الحصول على التحليلات
+  app.get("/api/cache/analytics", async (req, res) => {
+    try {
+      const analytics = await semanticCacheService.getAnalytics();
+      res.json(analytics);
+    } catch (error) {
+      console.error("Cache analytics error:", error);
+      res.status(500).json({ error: "Failed to get cache analytics" });
+    }
+  });
+
+  // إبطال التخزين المؤقت
+  app.post("/api/cache/invalidate", async (req, res) => {
+    try {
+      const result = await semanticCacheService.invalidate(req.body);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Cache invalidation failed" });
+    }
+  });
+
+  // تنظيف العناصر المنتهية الصلاحية (يدوياً)
+  app.post("/api/cache/cleanup", async (req, res) => {
+    try {
+      const result = await cacheCleanupScheduler.triggerManualCleanup();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Cache cleanup failed" });
+    }
+  });
+
+  // الحصول على حالة مُجدول التنظيف
+  app.get("/api/cache/cleanup/status", (req, res) => {
+    try {
+      const status = cacheCleanupScheduler.getStatus();
+      res.json(status);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get cleanup status" });
+    }
+  });
+
+  // تحديث إعدادات مُجدول التنظيف
+  app.put("/api/cache/cleanup/config", (req, res) => {
+    try {
+      const { intervalMinutes, enabled } = req.body;
+      cacheCleanupScheduler.updateConfig({ intervalMinutes, enabled });
+      res.json({ success: true, config: cacheCleanupScheduler.getStatus() });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update cleanup config" });
+    }
+  });
+
+  // ============================================================
+  // SDK Generation Routes
+  // ============================================================
+  registerSDKRoutes(app);
+
+  // توليد SDK
+  app.post("/api/sdk/generate", async (req, res) => {
+    try {
+      const { promptId, language, options } = req.body;
+
+      if (!promptId || !language) {
+        return res.status(400).json({
+          error: "Prompt ID and language are required"
+        });
+      }
+
+      // الحصول على بيانات الموجه من قاعدة البيانات
+      const prompt = await storage.getTemplateById(parseInt(promptId));
+      if (!prompt) {
+        return res.status(404).json({ error: "Prompt not found" });
+      }
+
+      // تحويل بيانات الموجه إلى التنسيق المتوقع
+      const promptConfig: any = {
+        id: prompt.id.toString(),
+        name: prompt.name,
+        description: prompt.description || "",
+        prompt: prompt.sections.system + "\n\n" + prompt.sections.user,
+        model: "gpt-4",
+        temperature: 0.7,
+        maxTokens: 1000,
+        topP: 0.9,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+        stopSequences: [],
+        variables: prompt.defaultVariables.map(v => ({
+          name: v.name,
+          type: "string" as const,
+          description: v.name,
+          required: true,
+        })),
+        createdAt: prompt.createdAt,
+        updatedAt: prompt.createdAt,
+      };
+
+      // توليد SDK
+      const sdk = SDKGenerator.generate({
+        promptConfig,
+        language,
+        options,
+      });
+
+      res.json(sdk);
+    } catch (error) {
+      console.error("SDK generation error:", error);
+      res.status(500).json({
+        error: "Failed to generate SDK",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // اختبار SDK
+  app.post("/api/sdk/test", async (req, res) => {
+    try {
+      const { sdk, promptId } = req.body;
+
+      if (!sdk) {
+        return res.status(400).json({ error: "SDK is required" });
+      }
+
+      // الحصول على بيانات الموجه للاختبار
+      const prompt = await storage.getTemplateById(parseInt(promptId));
+      let promptConfig: any = null;
+
+      if (prompt) {
+        promptConfig = {
+          id: prompt.id.toString(),
+          name: prompt.name,
+          description: prompt.description || "",
+          prompt: prompt.sections.system + "\n\n" + prompt.sections.user,
+          model: "gpt-4",
+          temperature: 0.7,
+          maxTokens: 1000,
+          topP: 0.9,
+          frequencyPenalty: 0,
+          presencePenalty: 0,
+          stopSequences: [],
+          variables: prompt.defaultVariables.map(v => ({
+            name: v.name,
+            type: "string" as const,
+            description: v.name,
+            required: true,
+          })),
+          createdAt: prompt.createdAt,
+          updatedAt: prompt.createdAt,
+        };
+      }
+
+      // اختبار SDK
+      const result = await runtimeTester.testSDK(sdk, promptConfig, {
+        timeout: 10000,
+        includeCompilation: true,
+        includeExecution: true,
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("SDK test error:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Test failed",
+        executionTime: 0,
+      });
+    }
+  });
+
+  // ============================================================
+  // Collaboration API (CRDT & Real-time)
+  // ============================================================
+  
+  // إنشاء جلسة تعاون جديدة
+  app.post("/api/collaboration/sessions", async (req, res) => {
+    try {
+      const { name, description, initialContent } = req.body;
+      
+      if (!name || name.trim() === '') {
+        return res.status(400).json({ error: "اسم الجلسة مطلوب" });
+      }
+
+      const sessionId = crypto.randomUUID();
+      
+      // إنشاء مستند CRDT للجلسة
+      const { crdtManager } = await import("./services/CRDTManager");
+      const doc = crdtManager.getDocument(sessionId);
+      
+      if (initialContent) {
+        crdtManager.updateDocumentContent(sessionId, initialContent);
+      }
+
+      res.status(201).json({
+        id: sessionId,
+        name: name.trim(),
+        description: description || '',
+        createdAt: new Date().toISOString(),
+        activeConnections: 0
+      });
+    } catch (error) {
+      console.error("خطأ في إنشاء جلسة التعاون:", error);
+      res.status(500).json({ error: "فشل في إنشاء جلسة التعاون" });
+    }
+  });
+
+  // الحصول على معلومات الجلسة
+  app.get("/api/collaboration/sessions/:sessionId", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { crdtManager } = await import("./services/CRDTManager");
+      
+      const stats = crdtManager.getSessionStats(sessionId);
+      const content = crdtManager.getDocumentContent(sessionId);
+
+      res.json({
+        id: sessionId,
+        content,
+        stats
+      });
+    } catch (error) {
+      console.error("خطأ في الحصول على الجلسة:", error);
+      res.status(500).json({ error: "فشل في الحصول على معلومات الجلسة" });
+    }
+  });
+
+  // الحصول على قائمة الجلسات النشطة
+  app.get("/api/collaboration/sessions", async (req, res) => {
+    try {
+      const { crdtManager } = await import("./services/CRDTManager");
+      const activeSessions = crdtManager.getActiveSessions();
+      
+      const sessions = activeSessions.map(sessionId => ({
+        id: sessionId,
+        stats: crdtManager.getSessionStats(sessionId)
+      }));
+
+      res.json(sessions);
+    } catch (error) {
+      console.error("خطأ في الحصول على الجلسات:", error);
+      res.status(500).json({ error: "فشل في الحصول على قائمة الجلسات" });
+    }
+  });
+
+  // ============================================================
+  // SDK Generator API
+  // ============================================================
+  
+  // توليد SDK للموجه
+  app.post("/api/sdk/generate", async (req, res) => {
+    try {
+      const { promptId, config } = req.body;
+      
+      if (!promptId) {
+        return res.status(400).json({ error: "معرف الموجه مطلوب" });
+      }
+
+      const { sdkGeneratorService } = await import("./services/SDKGeneratorService");
+      
+      // التحقق من صحة الإعدادات
+      sdkGeneratorService.validateConfig(config);
+      
+      // توليد SDK
+      const result = await sdkGeneratorService.generateSDK(promptId, config);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("خطأ في توليد SDK:", error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "فشل في توليد SDK" 
+      });
+    }
+  });
+
+  // الحصول على اللغات المدعومة
+  app.get("/api/sdk/languages", async (req, res) => {
+    try {
+      const { sdkGeneratorService } = await import("./services/SDKGeneratorService");
+      const languages = sdkGeneratorService.getSupportedLanguages();
+      
+      res.json({ languages });
+    } catch (error) {
+      res.status(500).json({ error: "فشل في الحصول على اللغات المدعومة" });
+    }
+  });
+
+  // ============================================================
+  // Cloud Deployment API
+  // ============================================================
+  
+  // استيراد مسارات النشر المتقدمة
+  const deploymentRoutes = await import("./routes/deployment");
+  app.use("/api/deploy", deploymentRoutes.default);
+
+  // نشر موجه على السحابة (للتوافق مع النسخة القديمة)
+  app.post("/api/deploy", async (req, res) => {
+    try {
+      const { promptId, config } = req.body;
+      
+      if (!promptId) {
+        return res.status(400).json({ error: "معرف الموجه مطلوب" });
+      }
+
+      const { cloudDeploymentService } = await import("./services/CloudDeploymentService");
+      
+      // بدء النشر (عملية غير متزامنة)
+      const result = await cloudDeploymentService.deployPrompt(promptId, config);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("خطأ في النشر:", error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "فشل في النشر" 
+      });
+    }
+  });
+
+  // الحصول على حالة النشر (للتوافق مع النسخة القديمة)
+  app.get("/api/deploy/:deploymentId", async (req, res) => {
+    try {
+      const { deploymentId } = req.params;
+      const { cloudDeploymentService } = await import("./services/CloudDeploymentService");
+      
+      const status = cloudDeploymentService.getDeploymentStatus(deploymentId);
+      
+      if (!status) {
+        return res.status(404).json({ error: "النشر غير موجود" });
+      }
+
+      res.json(status);
+    } catch (error) {
+      res.status(500).json({ error: "فشل في الحصول على حالة النشر" });
+    }
+  });
+
+  // الحصول على قائمة جميع النشرات (للتوافق مع النسخة القديمة)
+  app.get("/api/deploy", async (req, res) => {
+    try {
+      const { cloudDeploymentService } = await import("./services/CloudDeploymentService");
+      const deployments = cloudDeploymentService.getAllDeployments();
+      
+      res.json(deployments);
+    } catch (error) {
+      res.status(500).json({ error: "فشل في الحصول على قائمة النشرات" });
+    }
+  });
+
+  // حذف النشر (للتوافق مع النسخة القديمة)
+  app.delete("/api/deploy/:deploymentId", async (req, res) => {
+    try {
+      const { deploymentId } = req.params;
+      const { cloudDeploymentService } = await import("./services/CloudDeploymentService");
+      
+      const success = await cloudDeploymentService.deleteDeployment(deploymentId);
+      
+      if (!success) {
+        return res.status(404).json({ error: "النشر غير موجود" });
+      }
+
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "فشل في حذف النشر" });
+    }
+  });
+
+  // الحصول على المنصات المدعومة
+  app.get("/api/deploy/platforms", async (req, res) => {
+    try {
+      const { cloudDeploymentService } = await import("./services/CloudDeploymentService");
+      const platforms = cloudDeploymentService.getSupportedPlatforms();
+      
+      res.json({ platforms });
+    } catch (error) {
+      res.status(500).json({ error: "فشل في الحصول على المنصات المدعومة" });
+    }
+  });
+
   return httpServer;
 }
+
 
 // Helper function: Process agent compose asynchronously
 async function processAgentCompose(

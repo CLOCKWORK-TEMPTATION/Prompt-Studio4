@@ -1,0 +1,38 @@
+# Test Environment Docker Compose Configuration
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.test.yml up
+
+version: '3.8'
+
+services:
+  app:
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://postgres:password@db:5432/promptstudio_test
+      - REDIS_URL=redis://redis:6379/1
+      - GROQ_API_KEY=${GROQ_API_KEY:-test-key}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-test-key}
+      - JWT_SECRET=test-jwt-secret
+      - CACHE_ENABLED=false  # Disable cache for tests
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run test:integration
+
+  db:
+    environment:
+      - POSTGRES_DB=promptstudio_test
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+
+  redis:
+    volumes:
+      - redis_test_data:/data
+
+volumes:
+  postgres_test_data:
+  redis_test_data:
