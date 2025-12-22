@@ -223,3 +223,6 @@ temp/
 *.csv
 *.key.json
 bedrock-*.csv
+# Local environment files
+.env.local
+.env.*.local

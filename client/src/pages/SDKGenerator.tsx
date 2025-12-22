@@ -615,68 +615,6 @@ if __name__ == "__main__":
               </div>
             </CardContent>
           </Card>
-        </div>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="size-5" />
-                إعدادات SDK
-              </CardTitle>
-              <CardDescription>
-                تخصيص إعدادات المكتبة المولدة
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label>اللغة البرمجية</Label>
-                <select 
-                  className="w-full p-2 border rounded-md mt-1"
-                  value={sdkConfig.language}
-                  onChange={(e) => setSdkConfig({...sdkConfig, language: e.target.value})}
-                >
-                  {languages.map((lang) => (
-                    <option key={lang.id} value={lang.id}>
-                      {lang.icon} {lang.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <Label>اسم الحزمة</Label>
-                <Input 
-                  value={sdkConfig.packageName}
-                  onChange={(e) => setSdkConfig({...sdkConfig, packageName: e.target.value})}
-                  className="mt-1"
-                />
-              </div>
-              
-              <div>
-                <Label>الإصدار</Label>
-                <Input 
-                  value={sdkConfig.version}
-                  onChange={(e) => setSdkConfig({...sdkConfig, version: e.target.value})}
-                  className="mt-1"
-                />
-              </div>
-              
-              <div>
-                <Label>الوصف</Label>
-                <Textarea 
-                  value={sdkConfig.description}
-                  onChange={(e) => setSdkConfig({...sdkConfig, description: e.target.value})}
-                  className="mt-1"
-                />
-              </div>
-              
-              <div>
-                <Label>المؤلف</Label>
-                <Input 
-                  value={sdkConfig.author}
-                  onChange={(e) => setSdkConfig({...sdkConfig, author: e.target.value})}
-                  className="mt-1"
-                />
-              </div>
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader>
