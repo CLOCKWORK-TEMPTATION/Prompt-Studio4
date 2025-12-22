@@ -83,6 +83,22 @@ export class DeploymentService {
     }
 
     /**
+     * حذف مجلد بشكل آمن
+     */
+    private async safeRemoveDirectory(dirPath: string): Promise<void> {
+        // التأكد من أن المسار داخل مجلد templates
+        if (!dirPath.startsWith(this.templatesPath)) {
+            throw new Error('Cannot remove directory outside templates path');
+        }
+        
+        try {
+            await fs.rm(dirPath, { recursive: true, force: true });
+        } catch (error) {
+            console.error('Safe directory removal failed:', error);
+        }
+    }
+
+    /**
      * Deploy application to specified provider
      */
     async deploy(config: DeploymentConfig): Promise<DeploymentResult> {
@@ -177,7 +193,7 @@ export class DeploymentService {
         } catch (error) {
             // Cleanup on failure
             try {
-                await fs.rm(deploymentPath, { recursive: true, force: true });
+                await this.safeRemoveDirectory(deploymentPath);
             } catch (cleanupError) {
                 console.error('Cleanup failed:', cleanupError);
             }
@@ -202,253 +218,127 @@ export class DeploymentService {
             const wranglerConfig = `
 name = "promptstudio-${config.environment}"
 main = "dist/worker.js"
-com
+compatibility_date = "2023-05-18"
+
+[env.${config.environment}]
+vars = { ENVIRONMENT = "${config.environment}" }
+`;
+
+            await this.writeFileSecurely(deploymentPath, 'wrangler.toml', wranglerConfig);
+
+            // Copy application files
+            await this.copyAppFiles(deploymentPath);
+
+            // Deploy using Wrangler CLI
+            const sanitizedPath = deploymentPath.replace(/[;&|`$()]/g, '');
+            const { stdout, stderr } = await execAsync(
+                `cd "${sanitizedPath}" && npx wrangler publish`,
+                { 
+                    env: { 
+                        ...process.env, 
+                        CLOUDFLARE_API_TOKEN: config.config.cloudflareToken as string 
+                    },
+                    timeout: 300000
+                }
+            );
+
+            const logs = this.parseLogs(stdout + stderr);
+
+            return {
+                success: true,
+                deploymentId: `cloudflare-${Date.now()}`,
+                url: `https://promptstudio-${config.environment}.workers.dev`,
+                logs
+            };
+
+        } catch (error) {
+            try {
+                await this.safeRemoveDirectory(deploymentPath);
+            } catch (cleanupError) {
+                console.error('Cleanup failed:', cleanupError);
+            }
+
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Cloudflare deployment failed'
+            };
+        }
+    }
+
+    /**
+     * Deploy to AWS Lambda
+     */
+    private async deployToAWS(config: DeploymentConfig): Promise<DeploymentResult> {
+        const deploymentPath = this.createSafeDeploymentPath('aws');
+
+        try {
+            await fs.mkdir(deploymentPath, { recursive: true });
+
+            // Generate serverless.yml
+            const serverlessConfig = `
+service: promptstudio-${config.environment}
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ${config.region || 'us-east-1'}
+  environment:
+    ENVIRONMENT: ${config.environment}
+
+functions:
+  app:
+    handler: dist/lambda.handler
+    events:
+      - http:
+          path: /{proxy+}
+          method: ANY
+          cors: true
+      - http:
+          path: /
+          method: ANY
+          cors: true
+`;
+
+            await this.writeFileSecurely(deploymentPath, 'serverless.yml', serverlessConfig);
+
+            // Copy application files
+            await this.copyAppFiles(deploymentPath);
+
+            // Deploy using Serverless Framework
+            const sanitizedPath = deploymentPath.replace(/[;&|`$()]/g, '');
+            const { stdout, stderr } = await execAsync(
+                `cd "${sanitizedPath}" && npx serverless deploy`,
+                { 
+                    env: { 
+                        ...process.env, 
+                        AWS_ACCESS_KEY_ID: config.config.awsAccessKeyId as string,
+                        AWS_SECRET_ACCESS_KEY: config.config.awsSecretAccessKey as string
+                    },
+                    timeout: 600000 // 10 minutes timeout
+                }
+            );
+
             const logs = this.parseLogs(stdout + stderr);
             const deploymentUrl = this.extractDeploymentUrl(logs);
 
             return {
                 success: true,
-                deploymentId: `cloudflare-${Date.now()}`,
+                deploymentId: `aws-${Date.now()}`,
                 url: deploymentUrl,
                 logs
             };
 
         } catch (error) {
             try {
-                await fs.rm(deploymentPath, { recursive: true, force: true });
-            } catch (cleanupError) { console.error(cleanupError); }
-            throw error;
-        }
-    }
-
-    /**
-     * Deploy to AWS (ECS Fargate + CloudFront)
-     */
-    private async deployToAWS(config: DeploymentConfig): Promise<DeploymentResult> {
-        const templatePath = path.join(this.templatesPath, 'aws');
-        const deploymentPath = path.join(templatePath, `deployment-${Date.now()}`);
-
-        try {
-            await fs.mkdir(deploymentPath, { recursive: true });
-
-            // Generate Dockerfile
-            const dockerfile = `FROM node:18-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-
-RUN npm ci --only=production
-
-COPY . .
-
-EXPOSE 3000
-
-CMD ["npm", "start"]`;
-
-            await fs.writeFile(path.join(deploymentPath, 'Dockerfile'), dockerfile);
-
-            // Generate docker-compose.yml for local testing and ECS task definition template
-            const dockerCompose = `
-version: '3.8'
-services:
-  promptstudio:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=${config.environment}
-      ${Object.entries(config.config)
-                    .filter(([key]) => !['clusterName', 'serviceName', 'taskDefinition'].includes(key))
-                    .map(([key, value]) => `- ${key}=${value}`)
-                    .join('\n      ')}
-    depends_on:
-      - db
-
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: promptstudio
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${config.config.dbPassword || 'password'}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-volumes:
-  postgres_data:
-`;
-
-            // Generate ECS task definition
-            const taskDefinition = {
-                family: `promptstudio-${config.environment}`,
-                taskRoleArn: config.config.taskRoleArn,
-                executionRoleArn: config.config.executionRoleArn,
-                networkMode: 'awsvpc',
-                requiresCompatibilities: ['FARGATE'],
-                cpu: '256',
-                memory: '512',
-                containerDefinitions: [
-                    {
-                        name: 'promptstudio',
-                        image: '${aws_ecr_repository.promptstudio.repository_url}:latest',
-                        essential: true,
-                        portMappings: [
-                            {
-                                containerPort: 3000,
-                                hostPort: 3000,
-                                protocol: 'tcp'
-                            }
-                        ],
-                        environment: [
-                            { name: 'NODE_ENV', value: config.environment },
-                            ...Object.entries(config.config)
-                                .filter(([key]) => !['clusterName', 'serviceName', 'taskDefinition', 'taskRoleArn', 'executionRoleArn'].includes(key))
-                                .map(([key, value]) => ({ name: key, value: String(value) }))
-                        ],
-                        logConfiguration: {
-                            logDriver: 'awslogs',
-                            options: {
-                                'awslogs-group': `/ecs/promptstudio-${config.environment}`,
-                                'awslogs-region': config.region || 'us-east-1',
-                                'awslogs-stream-prefix': 'ecs'
-                            }
-                        }
-                    }
-                ]
-            };
-
-            // Generate CloudFormation template for infrastructure
-            const cloudFormationTemplate = `
-AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Prompt Studio Infrastructure'
-
-Parameters:
-  Environment:
-    Type: String
-    Default: ${config.environment}
-    AllowedValues:
-      - development
-      - staging
-      - production
-
-Resources:
-  ECSCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName: !Sub \${AWS::StackName}-cluster
-
-  ECSTaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: !Sub \${AWS::StackName}-task
-      Cpu: 256
-      Memory: 512
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
-      TaskRoleArn: !GetAtt ECSTaskRole.Arn
-      ContainerDefinitions:
-        - Name: promptstudio
-          Image: !Sub \${AWS::Account}:dkr.ecr.\${AWS::Region}.amazonaws.com/promptstudio:\${Environment}
-          Essential: true
-          PortMappings:
-            - ContainerPort: 3000
-              Protocol: tcp
-          Environment:
-            - Name: NODE_ENV
-              Value: !Ref Environment
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Ref LogGroup
-              awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: ecs
-
-  ECSService:
-    Type: AWS::ECS::Service
-    Properties:
-      ServiceName: !Sub \${AWS::StackName}-service
-      Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref ECSTaskDefinition
-      DesiredCount: 1
-      LaunchType: FARGATE
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          Subnets:
-            - !Ref PrivateSubnet1
-            - !Ref PrivateSubnet2
-          SecurityGroups:
-            - !Ref ECSServiceSecurityGroup
-          AssignPublicIp: ENABLED
-
-  CloudFrontDistribution:
-    Type: AWS::CloudFront::Distribution
-    Properties:
-      DistributionConfig:
-        Origins:
-          - DomainName: !GetAtt LoadBalancer.DNSName
-            Id: ELBOrigin
-            CustomOriginConfig:
-              HTTPPort: 80
-              HTTPSPort: 443
-              OriginProtocolPolicy: https-only
-        Enabled: true
-        DefaultCacheBehavior:
-          TargetOriginId: ELBOrigin
-          ViewerProtocolPolicy: redirect-to-https
-          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
-          Compress: true
-          ForwardedValues:
-            QueryString: true
-            Cookies:
-              Forward: all
-        HttpVersion: http2
-        PriceClass: PriceClass_100
-
-Outputs:
-  CloudFrontURL:
-    Description: CloudFront Distribution URL
-    Value: !Sub https://\${CloudFrontDistribution.DomainName}
-    Export:
-      Name: !Sub \${AWS::StackName}-CloudFrontURL
-`;
-
-            await fs.writeFile(
-                path.join(deploymentPath, 'docker-compose.yml'),
-                dockerCompose
-            );
-
-            await fs.writeFile(
-                path.join(deploymentPath, 'task-definition.json'),
-                JSON.stringify(taskDefinition, null, 2)
-            );
-
-            await fs.writeFile(
-                path.join(deploymentPath, 'cloudformation.yml'),
-                cloudFormationTemplate
-            );
-
-            await this.copyAppFiles(deploymentPath);
-
-            // Note: In production, you'd use AWS SDK or CLI to deploy
-            // For now, we'll simulate successful deployment
-            const deploymentId = `aws-${Date.now()}`;
-
-            return {
-                success: true,
-                deploymentId,
-                url: `https://${deploymentId}.cloudfront.net`,
-                logs: ['AWS deployment templates generated successfully']
-            };
-
-        } catch (error) {
-            try {
-                await fs.rm(deploymentPath, { recursive: true, force: true });
+                await this.safeRemoveDirectory(deploymentPath);
             } catch (cleanupError) {
                 console.error('Cleanup failed:', cleanupError);
             }
-            throw error;
+
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'AWS deployment failed'
+            };
         }
     }
 
@@ -456,149 +346,114 @@ Outputs:
      * Deploy to Google Cloud Platform
      */
     private async deployToGCP(config: DeploymentConfig): Promise<DeploymentResult> {
-        const templatePath = path.join(this.templatesPath, 'gcp');
-        const deploymentPath = path.join(templatePath, `deployment-${Date.now()}`);
+        const deploymentPath = this.createSafeDeploymentPath('gcp');
 
         try {
             await fs.mkdir(deploymentPath, { recursive: true });
 
-            // Generate Dockerfile for Cloud Run
-            const dockerfile = `FROM node:18-alpine
+            // Generate app.yaml
+            const appYaml = `
+runtime: nodejs18
+service: promptstudio-${config.environment}
 
-WORKDIR /app
+env_variables:
+  ENVIRONMENT: ${config.environment}
 
-COPY package*.json ./
-
-RUN npm ci --only=production
-
-COPY . .
-
-EXPOSE 3000
-
-CMD ["npm", "start"]`;
-
-            // Generate .dockerignore
-            const dockerignore = `node_modules
-npm-debug.log
-.git
-.gitignore
-README.md
-.env
-.nyc_output
-coverage
-.coverage
-.cache
-dist
-build
-.next
-.vercel
-*.log
-.DS_Store
-.vscode
-.idea
-*.swp
-*.swo
-*~
+automatic_scaling:
+  min_instances: 0
+  max_instances: 10
 `;
 
-            // Generate cloudbuild.yaml for Cloud Build (optional)
-            const cloudbuild = `steps:
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', 'gcr.io/$PROJECT_ID/promptstudio:$COMMIT_SHA', '.']
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'gcr.io/$PROJECT_ID/promptstudio:$COMMIT_SHA']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args:
-  - 'run'
-  - 'deploy'
-  - 'promptstudio-service'
-  - '--image'
-  - 'gcr.io/$PROJECT_ID/promptstudio:$COMMIT_SHA'
-  - '--region'
-  - '${config.region || 'us-central1'}'
-  - '--platform'
-  - 'managed'
-  - '--allow-unauthenticated'
-  - '--set-env-vars'
-  - 'NODE_ENV=${config.environment}'
-  - '--memory'
-  - '1Gi'
-  - '--cpu'
-  - '1'
-`;
+            await this.writeFileSecurely(deploymentPath, 'app.yaml', appYaml);
 
-            await fs.writeFile(path.join(deploymentPath, 'Dockerfile'), dockerfile);
-            await fs.writeFile(path.join(deploymentPath, '.dockerignore'), dockerignore);
-            await fs.writeFile(path.join(deploymentPath, 'cloudbuild.yaml'), cloudbuild);
-
+            // Copy application files
             await this.copyAppFiles(deploymentPath);
 
-            // Simulate deployment
-            const deploymentId = `gcp-${Date.now()}`;
-            const url = `https://promptstudio-${config.environment}-${deploymentId}.run.app`;
+            // Deploy using gcloud CLI
+            const sanitizedPath = deploymentPath.replace(/[;&|`$()]/g, '');
+            const { stdout, stderr } = await execAsync(
+                `cd "${sanitizedPath}" && gcloud app deploy --quiet`,
+                { 
+                    env: { 
+                        ...process.env, 
+                        GOOGLE_APPLICATION_CREDENTIALS: config.config.gcpCredentials as string
+                    },
+                    timeout: 600000
+                }
+            );
+
+            const logs = this.parseLogs(stdout + stderr);
+            const deploymentUrl = this.extractDeploymentUrl(logs);
 
             return {
                 success: true,
-                deploymentId,
-                url,
-                logs: ['GCP Cloud Run deployment templates generated successfully']
+                deploymentId: `gcp-${Date.now()}`,
+                url: deploymentUrl,
+                logs
             };
 
         } catch (error) {
             try {
-                await fs.rm(deploymentPath, { recursive: true, force: true });
+                await this.safeRemoveDirectory(deploymentPath);
             } catch (cleanupError) {
                 console.error('Cleanup failed:', cleanupError);
             }
-            throw error;
+
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'GCP deployment failed'
+            };
         }
     }
 
+    /**
+     * Copy application files to deployment directory
+     */
     private async copyAppFiles(deploymentPath: string): Promise<void> {
-        // We only copy necessary files for a static/serverless deployment
-        // In a real app we might verify 'dist' exists first
-        const filesToCopy = [
-            'package.json',
-            'package-lock.json',
-            'dist/',
-            'public/',
-            // 'src/', // Usually not needed for production deployment if built
-            // 'prisma/', // Not needed if we are just deploying the build artifact/serverless functions, unless we run migrations
-        ];
+        try {
+            // تحديد مجلد المصدر الآمن
+            const sourceDir = path.resolve('./');
+            
+            // نسخ الملفات الأساسية فقط - تجنب نسخ ملفات النظام
+            const filesToCopy = [
+                'package.json',
+                'package-lock.json',
+                'dist/',
+                'public/',
+                '.env.example'
+            ];
 
-        for (const file of filesToCopy) {
-            try {
-                // Adjust src path to root of project
-                const srcPath = path.resolve(process.cwd(), file);
-                const destPath = path.join(deploymentPath, file);
-
-                // Check if src exists
+            for (const file of filesToCopy) {
+                const sourcePath = this.validatePath(file, sourceDir);
+                const destPath = this.validatePath(file, deploymentPath);
+                
                 try {
-                    await fs.access(srcPath);
-                } catch {
-                    // console.warn(`Skipping ${file}: Source not found`);
-                    continue;
+                    const stats = await fs.stat(sourcePath);
+                    if (stats.isDirectory()) {
+                        await this.copyDirectory(sourcePath, destPath);
+                    } else {
+                        await fs.copyFile(sourcePath, destPath);
+                    }
+                } catch (error) {
+                    // تجاهل الملفات غير الموجودة
+                    console.warn(`File not found, skipping: ${file}`);
                 }
-
-                const stat = await fs.stat(srcPath);
-                if (stat.isDirectory()) {
-                    await this.copyDirectory(srcPath, destPath);
-                } else {
-                    await fs.copyFile(srcPath, destPath);
-                }
-            } catch (error) {
-                console.warn(`Skipping ${file}: ${error}`);
             }
+        } catch (error) {
+            throw new Error(`Failed to copy application files: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
 
-    private async copyDirectory(src: string, dest: string): Promise<void> {
-        await fs.mkdir(dest, { recursive: true });
-        const entries = await fs.readdir(src, { withFileTypes: true });
+    /**
+     * نسخ مجلد بشكل آمن
+     */
+    private async copyDirectory(source: string, destination: string): Promise<void> {
+        await fs.mkdir(destination, { recursive: true });
+        const entries = await fs.readdir(source, { withFileTypes: true });
 
         for (const entry of entries) {
-            const srcPath = path.join(src, entry.name);
-            const destPath = path.join(dest, entry.name);
+            const srcPath = this.validatePath(entry.name, source);
+            const destPath = this.validatePath(entry.name, destination);
 
             if (entry.isDirectory()) {
                 await this.copyDirectory(srcPath, destPath);
@@ -608,29 +463,106 @@ build
         }
     }
 
+    /**
+     * Parse deployment logs
+     */
     private parseLogs(output: string): string[] {
         return output
             .split('\n')
-            .filter(line => line.trim())
+            .filter(line => line.trim().length > 0)
             .map(line => line.trim());
     }
 
+    /**
+     * Extract deployment URL from logs
+     */
     private extractDeploymentUrl(logs: string[]): string | undefined {
         for (const log of logs) {
-            // Basic regex to find URLs in logs
-            const urlMatch = log.match(/(https?:\/\/[^\s]+)/);
+            // البحث عن URLs في السجلات
+            const urlMatch = log.match(/https?:\/\/[^\s]+/);
             if (urlMatch) {
-                return urlMatch[1];
-            }
-            // Vercel specific output often has "Preview: https://..." or "Production: https://..."
-            if (log.includes('Production:')) {
-                const parts = log.split('Production:');
-                if (parts[1]) return parts[1].trim();
+                return urlMatch[0];
             }
         }
         return undefined;
     }
+
+    /**
+     * Generate Docker Compose configuration
+     */
+    async generateDockerCompose(config: DeploymentConfig): Promise<string> {
+        const dbPassword = (config.config.dbPassword as string) || 'secure_password_change_me';
+        
+        return `version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=${config.environment}
+      - DATABASE_URL=postgresql://postgres:${dbPassword}@db:5432/promptstudio
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: promptstudio
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${dbPassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+`;
+    }
+
+    /**
+     * Generate environment variables template
+     */
+    generateEnvTemplate(): string {
+        return `# Environment Configuration
+NODE_ENV=production
+PORT=3000
+
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/promptstudio
+
+# API Keys
+GROQ_API_KEY=your_groq_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+GOOGLE_AI_API_KEY=your_google_ai_api_key_here
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# Security
+SESSION_SECRET=your_session_secret_change_me_in_production
+JWT_SECRET=your_jwt_secret_change_me_in_production
+
+# Deployment Tokens (uncomment as needed)
+# VERCEL_TOKEN=your_vercel_token
+# CLOUDFLARE_API_TOKEN=your_cloudflare_token
+# AWS_ACCESS_KEY_ID=your_aws_access_key
+# AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/gcp-credentials.json
+`;
+    }
 }
 
 export const deploymentService = new DeploymentService();
-export default deploymentService;
