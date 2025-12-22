@@ -227,6 +227,7 @@ export function registerSDKRoutes(app: Express): void {
       );
 
       res.send(pkg.sdk.code);
+      res.end();
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({

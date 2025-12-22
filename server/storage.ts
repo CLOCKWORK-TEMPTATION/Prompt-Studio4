@@ -23,6 +23,7 @@ import { eq, desc, like, or, sql } from "drizzle-orm";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
+  ssl: false, // تعطيل SSL للاتصال المحلي
 });
 
 export const db = drizzle(pool, { schema });

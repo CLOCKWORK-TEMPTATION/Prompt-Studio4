@@ -9,8 +9,28 @@ import { GeneratedSDK, PromptConfig } from '../types';
 import { SDKGenerator } from '../advanced-index';
 import { spawn } from 'child_process';
 import { writeFileSync, unlinkSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, resolve, normalize } from 'path';
 import { tmpdir } from 'os';
+
+// Security: Sanitize filename to prevent path traversal
+function sanitizeFilename(filename: string): string {
+  return filename.replace(/[^a-zA-Z0-9_.-]/g, '_');
+}
+
+// Security: Validate path is within allowed directory
+function validatePath(filePath: string, baseDir: string): string {
+  const normalizedPath = normalize(resolve(filePath));
+  const normalizedBase = normalize(resolve(baseDir));
+  if (!normalizedPath.startsWith(normalizedBase)) {
+    throw new Error('Path traversal detected');
+  }
+  return normalizedPath;
+}
+
+// Security: Sanitize log output
+function sanitizeLog(input: string): string {
+  return input.replace(/[\r\n]/g, ' ').substring(0, 200);
+}
 
 interface TestResult {
   language: string;
@@ -100,10 +120,10 @@ export class RuntimeTester {
     options: RuntimeTestOptions
   ): Promise<string[]> {
     const files: string[] = [];
-    const baseName = `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const baseName = sanitizeFilename(`test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
 
     // Main SDK file
-    const sdkFile = join(this.tempDir, `${baseName}.${this.getFileExtension(sdk.language)}`);
+    const sdkFile = validatePath(join(this.tempDir, `${baseName}.${this.getFileExtension(sdk.language)}`), this.tempDir);
     writeFileSync(sdkFile, sdk.code);
     files.push(sdkFile);
 
@@ -157,7 +177,7 @@ export class RuntimeTester {
   ): string {
     const isTypeScript = sdk.language === 'typescript';
     const extension = isTypeScript ? 'ts' : 'js';
-    const testFile = join(this.tempDir, `${baseName}_test.${extension}`);
+    const testFile = validatePath(join(this.tempDir, `${sanitizeFilename(baseName)}_test.${extension}`), this.tempDir);
 
     const testCode = `
 ${isTypeScript ? 'import { createPromptClient } from "./' + baseName + '";' : 'const { createPromptClient } = require("./' + baseName + '");'}
@@ -213,7 +233,7 @@ if (require.main === module) {
     testData: Record<string, any>,
     baseName: string
   ): string {
-    const testFile = join(this.tempDir, `${baseName}_test.py`);
+    const testFile = validatePath(join(this.tempDir, `${sanitizeFilename(baseName)}_test.py`), this.tempDir);
 
     const testCode = `
 #!/usr/bin/env python3
@@ -264,7 +284,7 @@ if __name__ == "__main__":
     switch (sdk.language) {
       case 'typescript':
       case 'javascript' as any:
-        const packageFile = join(this.tempDir, 'package.json');
+        const packageFile = validatePath(join(this.tempDir, 'package.json'), this.tempDir);
         const packageJson = {
           name: `${baseName}-test`,
           version: '1.0.0',
@@ -285,7 +305,7 @@ if __name__ == "__main__":
         return packageFile;
 
       case 'python':
-        const requirementsFile = join(this.tempDir, 'requirements.txt');
+        const requirementsFile = validatePath(join(this.tempDir, 'requirements.txt'), this.tempDir);
         const requirements = sdk.dependencies.join('\n');
         writeFileSync(requirementsFile, requirements);
         return requirementsFile;
@@ -416,7 +436,8 @@ if __name__ == "__main__":
         }
       } catch (error) {
         // إذا فشلت القراءة، نحاول التحويل
-        const tsc = spawn('npx', ['tsc', '--noEmit', '--skipLibCheck', ...tsFiles], {
+        const validatedFiles = tsFiles.map(f => validatePath(f, this.tempDir));
+        const tsc = spawn('npx', ['tsc', '--noEmit', '--skipLibCheck', ...validatedFiles], {
           cwd: this.tempDir,
           stdio: 'pipe'
         });
@@ -475,7 +496,8 @@ if __name__ == "__main__":
         }
       } catch (error) {
         // Use Node.js to check syntax
-        const node = spawn('node', ['--check', jsFiles[0]], {
+        const validatedFile = validatePath(jsFiles[0], this.tempDir);
+        const node = spawn('node', ['--check', validatedFile], {
           cwd: this.tempDir,
           stdio: 'pipe'
         });
@@ -533,7 +555,8 @@ if __name__ == "__main__":
           resolve({ valid: false, error: 'Basic Python syntax check failed' });
         }
       } catch (error) {
-        const python = spawn('python3', ['-m', 'py_compile', pyFiles[0]], {
+        const validatedFile = validatePath(pyFiles[0], this.tempDir);
+        const python = spawn('python3', ['-m', 'py_compile', validatedFile], {
           cwd: this.tempDir,
           stdio: 'pipe'
         });
@@ -616,9 +639,10 @@ if __name__ == "__main__":
       }
 
       const isTypeScript = testFile.endsWith('.ts');
+      const validatedFile = validatePath(testFile, this.tempDir);
       const node = spawn(isTypeScript ? 'npx' : 'node', [
         ...(isTypeScript ? ['ts-node'] : []),
-        testFile
+        validatedFile
       ], {
         cwd: this.tempDir,
         stdio: 'pipe',
@@ -677,7 +701,8 @@ if __name__ == "__main__":
         return;
       }
 
-      const python = spawn('python3', [testFile], {
+      const validatedFile = validatePath(testFile, this.tempDir);
+      const python = spawn('python3', [validatedFile], {
         cwd: this.tempDir,
         stdio: 'pipe',
         timeout: options.timeout || 10000
@@ -791,7 +816,7 @@ export async function testAllSDKs(
 
   for (const language of languages) {
     try {
-      console.log(`Testing ${language} SDK...`);
+      console.log(`Testing ${sanitizeLog(language)} SDK...`);
 
       const sdk = SDKGenerator.generate({
         promptConfig: config,
@@ -801,9 +826,9 @@ export async function testAllSDKs(
       const result = await tester.testSDK(sdk, config, options);
       results[language] = result;
 
-      console.log(`${language}: ${result.success ? '✅ PASS' : '❌ FAIL'}`);
+      console.log(`${sanitizeLog(language)}: ${result.success ? '✅ PASS' : '❌ FAIL'}`);
       if (!result.success && result.error) {
-        console.log(`  Error: ${result.error}`);
+        console.log(`  Error: ${sanitizeLog(result.error)}`);
       }
 
     } catch (error) {

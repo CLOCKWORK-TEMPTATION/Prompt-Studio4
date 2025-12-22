@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import session from "express-session";
@@ -12,6 +13,7 @@ import { alertService } from "./services/AlertService";
 import { setupMonitoringMiddleware } from "./middleware/monitoring";
 import monitoringRoutes from "./routes/monitoring";
 import { securityHeaders, generalRateLimiter, requestId, validateContentLength } from "./middleware/security";
+import { csrfProtection, attachCsrfToken, getCsrfToken } from "./middleware/csrf";
 
 const app = express();
 const httpServer = createServer(app);
@@ -115,18 +117,27 @@ app.use((req, res, next) => {
   next();
 });
 
-// إعداد middleware المراقبة
-setupMonitoringMiddleware(app);
-
-// إضافة مسارات المراقبة
-app.use('/api/monitoring', monitoringRoutes);
-
 (async () => {
   // بدء خدمة المراقبة
   monitoringService.start(30000); // كل 30 ثانية
   log("Monitoring service started", "monitoring");
 
+  // إضافة CSRF token إلى response headers
+  app.use(attachCsrfToken);
+
+  // مسار للحصول على CSRF token
+  app.get('/api/csrf-token', getCsrfToken);
+
+  // تطبيق حماية CSRF على جميع مسارات API (ما عدا GET)
+  app.use('/api', csrfProtection);
+
   await registerRoutes(httpServer, app);
+
+  // إعداد middleware المراقبة
+  setupMonitoringMiddleware(app);
+
+  // إضافة مسارات المراقبة
+  app.use('/api/monitoring', monitoringRoutes);
 
   // Setup WebSocket server
   setupWebSocket(httpServer);

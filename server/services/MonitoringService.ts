@@ -79,6 +79,8 @@ export class MonitoringService extends EventEmitter {
 
   constructor() {
     super();
+    // زيادة حد المستمعين لمنع تحذيرات memory leak
+    this.setMaxListeners(20);
     this.setupDefaultAlertRules();
   }
 
@@ -183,8 +185,16 @@ export class MonitoringService extends EventEmitter {
       this.intervalId = undefined;
     }
 
-    console.log('[Monitoring] تم إيقاف خدمة المراقبة');
+    // تجنب الطباعة في بيئة الاختبار
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('[Monitoring] تم إيقاف خدمة المراقبة');
+    }
+    
+    // إرسال حدث الإيقاف قبل تنظيف المستمعين
     this.emit('stopped');
+    
+    // تنظيف جميع المستمعين لمنع memory leaks
+    this.removeAllListeners();
   }
 
   /**
@@ -309,7 +319,10 @@ export class MonitoringService extends EventEmitter {
         // تجاهل الخطأ إذا لم نتمكن من الحصول على العدد
       }
     } catch (error) {
-      console.error('[Monitoring] خطأ في فحص قاعدة البيانات:', error);
+      // تجنب الطباعة في بيئة الاختبار لمنع "Cannot log after tests are done"
+      if (process.env.NODE_ENV !== 'test') {
+        console.error('[Monitoring] خطأ في فحص قاعدة البيانات:', error);
+      }
     }
 
     const responseTime = performance.now() - startTime;
@@ -340,7 +353,10 @@ export class MonitoringService extends EventEmitter {
         memoryUsage = parseInt(memoryMatch[1]);
       }
     } catch (error) {
-      console.error('[Monitoring] خطأ في فحص Redis:', error);
+      // تجنب الطباعة في بيئة الاختبار لمنع "Cannot log after tests are done"
+      if (process.env.NODE_ENV !== 'test') {
+        console.error('[Monitoring] خطأ في فحص Redis:', error);
+      }
     }
 
     const responseTime = performance.now() - startTime;

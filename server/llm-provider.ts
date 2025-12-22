@@ -1,11 +1,18 @@
 import { z } from "zod";
 
-// Groq API configuration (OpenAI-compatible)
+// API configuration for different providers
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const GOOGLE_AI_API_KEY = process.env.GOOGLE_AI_API_KEY;
+
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+const OPENAI_BASE_URL = "https://api.openai.com/v1";
+const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
+const GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
 // Default model for Groq
-const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct";
 
 export interface Message {
   role: "system" | "user" | "assistant" | "developer";
@@ -41,26 +48,58 @@ export interface CritiqueResponse {
 }
 
 export class LLMProvider {
-  private baseUrl: string;
+  private groqBaseUrl: string;
+  private openaiBaseUrl: string;
+  private anthropicBaseUrl: string;
+  private googleBaseUrl: string;
 
-  constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl || GROQ_BASE_URL;
+  constructor() {
+    this.groqBaseUrl = GROQ_BASE_URL;
+    this.openaiBaseUrl = OPENAI_BASE_URL;
+    this.anthropicBaseUrl = ANTHROPIC_BASE_URL;
+    this.googleBaseUrl = GOOGLE_BASE_URL;
   }
 
-  private getApiKey(sessionKey?: string): string {
+  private getApiKey(provider: string, sessionKey?: string): string {
     // Priority: session API key > environment secret
-    const key = sessionKey || GROQ_API_KEY;
+    let key: string | undefined;
+    
+    switch (provider) {
+      case "groq":
+        key = sessionKey || GROQ_API_KEY;
+        break;
+      case "openai":
+        key = sessionKey || OPENAI_API_KEY;
+        break;
+      case "anthropic":
+        key = sessionKey || ANTHROPIC_API_KEY;
+        break;
+      case "google":
+        key = sessionKey || GOOGLE_AI_API_KEY;
+        break;
+      default:
+        key = sessionKey || GROQ_API_KEY; // fallback to Groq
+    }
+    
     if (!key) {
-      throw new Error("NO_API_KEY");
+      throw new Error(`NO_API_KEY_FOR_${provider.toUpperCase()}`);
     }
     return key;
+  }
+
+  private getProviderFromModel(model: string): string {
+    if (model.startsWith("gpt-")) return "openai";
+    if (model.startsWith("claude-")) return "anthropic";
+    if (model.startsWith("models/gemini-")) return "google";
+    return "groq"; // default
   }
 
   /**
    * Run a completion request
    */
   async complete(request: CompletionRequest, sessionKey?: string): Promise<CompletionResponse> {
-    const apiKey = this.getApiKey(sessionKey);
+    const provider = this.getProviderFromModel(request.model);
+    const apiKey = this.getApiKey(provider, sessionKey);
     const startTime = Date.now();
 
     // Convert "developer" role to "system" for API compatibility
@@ -69,13 +108,38 @@ export class LLMProvider {
       content: msg.content,
     }));
 
-    // Use default model if not specified or if it's an OpenAI model
+    let response: Response;
     let model = request.model;
-    if (model.startsWith("gpt-") || model.startsWith("o1-")) {
-      model = DEFAULT_MODEL;
+
+    switch (provider) {
+      case "openai":
+        response = await this.callOpenAI(model, messages, request, apiKey);
+        break;
+      case "anthropic":
+        response = await this.callAnthropic(model, messages, request, apiKey);
+        break;
+      case "google":
+        response = await this.callGoogle(model, messages, request, apiKey);
+        break;
+      case "groq":
+      default:
+        response = await this.callGroq(model, messages, request, apiKey);
+        break;
     }
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`${provider.toUpperCase()} API error (${response.status}): ${error}`);
+    }
+
+    const data = await response.json();
+    const latency = Date.now() - startTime;
+
+    return this.parseResponse(data, latency, provider);
+  }
+
+  private async callGroq(model: string, messages: any[], request: CompletionRequest, apiKey: string): Promise<Response> {
+    return fetch(`${this.groqBaseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -88,25 +152,105 @@ export class LLMProvider {
         max_tokens: request.max_tokens,
       }),
     });
+  }
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Groq API error (${response.status}): ${error}`);
+  private async callOpenAI(model: string, messages: any[], request: CompletionRequest, apiKey: string): Promise<Response> {
+    return fetch(`${this.openaiBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: request.temperature ?? 0.7,
+        max_tokens: request.max_tokens,
+      }),
+    });
+  }
+
+  private async callAnthropic(model: string, messages: any[], request: CompletionRequest, apiKey: string): Promise<Response> {
+    // Convert messages format for Anthropic
+    const systemMessage = messages.find(m => m.role === "system")?.content || "";
+    const userMessages = messages.filter(m => m.role !== "system");
+    
+    return fetch(`${this.anthropicBaseUrl}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        system: systemMessage,
+        messages: userMessages,
+        temperature: request.temperature ?? 0.7,
+        max_tokens: request.max_tokens || 1000,
+      }),
+    });
+  }
+
+  private async callGoogle(model: string, messages: any[], request: CompletionRequest, apiKey: string): Promise<Response> {
+    // Convert messages format for Google
+    const contents = messages.map(msg => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }]
+    }));
+
+    return fetch(`${this.googleBaseUrl}/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents,
+        generationConfig: {
+          temperature: request.temperature ?? 0.7,
+          maxOutputTokens: request.max_tokens,
+        },
+      }),
+    });
+  }
+
+  private parseResponse(data: any, latency: number, provider: string): CompletionResponse {
+    let output: string;
+    let tokenUsage: any = undefined;
+
+    switch (provider) {
+      case "anthropic":
+        output = data.content[0].text;
+        tokenUsage = data.usage ? {
+          prompt: data.usage.input_tokens,
+          completion: data.usage.output_tokens,
+          total: data.usage.input_tokens + data.usage.output_tokens,
+        } : undefined;
+        break;
+      case "google":
+        output = data.candidates[0].content.parts[0].text;
+        tokenUsage = data.usageMetadata ? {
+          prompt: data.usageMetadata.promptTokenCount,
+          completion: data.usageMetadata.candidatesTokenCount,
+          total: data.usageMetadata.totalTokenCount,
+        } : undefined;
+        break;
+      case "openai":
+      case "groq":
+      default:
+        output = data.choices[0].message.content;
+        tokenUsage = data.usage ? {
+          prompt: data.usage.prompt_tokens,
+          completion: data.usage.completion_tokens,
+          total: data.usage.total_tokens,
+        } : undefined;
+        break;
     }
 
-    const data = await response.json();
-    const latency = Date.now() - startTime;
-
     return {
-      output: data.choices[0].message.content,
+      output,
       latency,
-      tokenUsage: data.usage
-        ? {
-            prompt: data.usage.prompt_tokens,
-            completion: data.usage.completion_tokens,
-            total: data.usage.total_tokens,
-          }
-        : undefined,
+      tokenUsage,
     };
   }
 

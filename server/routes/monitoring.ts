@@ -71,7 +71,7 @@ router.post('/start', (req, res) => {
 /**
  * إيقاف خدمة المراقبة
  */
-router.post('/stop', (req, res) => {
+router.post('/stop', (_req, res) => {
   try {
     monitoringService.stop();
     res.json({ success: true, message: 'تم إيقاف خدمة المراقبة' });

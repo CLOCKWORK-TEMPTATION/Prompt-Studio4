@@ -39,3 +39,4 @@ DO $$
 BEGIN
     RAISE NOTICE 'Prompt Studio database initialized successfully';
 END $$;
+

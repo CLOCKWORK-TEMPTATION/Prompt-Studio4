@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import type { Server } from "http";
 import { storage } from "./storage";
 import { llmProvider } from "./llm-provider";
 import { runAgent1, runAgent2, runAgent3 } from "./agents";
@@ -135,7 +135,7 @@ export async function registerRoutes(
   });
 
   // Techniques CRUD
-  app.get("/api/techniques", async (req, res) => {
+  app.get("/api/techniques", async (_req, res) => {
     try {
       const techniques = await storage.getAllTechniques();
       res.json(techniques);
@@ -521,7 +521,7 @@ export async function registerRoutes(
   // ============================================================
   
   // البحث في التخزين المؤقت
-  app.post("/api/cache/lookup", async (req, res) => {
+  app.post("/api/cache/lookup", async (_req, res) => {
     try {
       const result = await semanticCacheService.lookup(req.body);
       res.json(result);
@@ -531,7 +531,7 @@ export async function registerRoutes(
   });
 
   // حفظ في التخزين المؤقت
-  app.post("/api/cache/store", async (req, res) => {
+  app.post("/api/cache/store", async (_req, res) => {
     try {
       const entry = await semanticCacheService.store(req.body);
       res.json(entry);
@@ -541,7 +541,7 @@ export async function registerRoutes(
   });
 
   // الحصول على التكوينات
-  app.get("/api/cache/config", async (req, res) => {
+  app.get("/api/cache/config", async (_req, res) => {
     try {
       const config = await semanticCacheService.getConfig();
       res.json(config);
@@ -551,7 +551,7 @@ export async function registerRoutes(
   });
 
   // تحديث التكوينات
-  app.put("/api/cache/config", async (req, res) => {
+  app.put("/api/cache/config", async (_req, res) => {
     try {
       const config = await semanticCacheService.updateConfig(req.body);
       res.json(config);
@@ -561,7 +561,7 @@ export async function registerRoutes(
   });
 
   // الحصول على التحليلات
-  app.get("/api/cache/analytics", async (req, res) => {
+  app.get("/api/cache/analytics", async (_req, res) => {
     try {
       const analytics = await semanticCacheService.getAnalytics();
       res.json(analytics);
@@ -572,7 +572,7 @@ export async function registerRoutes(
   });
 
   // إبطال التخزين المؤقت
-  app.post("/api/cache/invalidate", async (req, res) => {
+  app.post("/api/cache/invalidate", async (_req, res) => {
     try {
       const result = await semanticCacheService.invalidate(req.body);
       res.json(result);
@@ -582,7 +582,7 @@ export async function registerRoutes(
   });
 
   // تنظيف العناصر المنتهية الصلاحية (يدوياً)
-  app.post("/api/cache/cleanup", async (req, res) => {
+  app.post("/api/cache/cleanup", async (_req, res) => {
     try {
       const result = await cacheCleanupScheduler.triggerManualCleanup();
       res.json(result);
@@ -592,7 +592,7 @@ export async function registerRoutes(
   });
 
   // الحصول على حالة مُجدول التنظيف
-  app.get("/api/cache/cleanup/status", (req, res) => {
+  app.get("/api/cache/cleanup/status", (_req, res) => {
     try {
       const status = cacheCleanupScheduler.getStatus();
       res.json(status);
@@ -746,7 +746,7 @@ export async function registerRoutes(
       
       // إنشاء مستند CRDT للجلسة
       const { crdtManager } = await import("./services/CRDTManager");
-      const doc = crdtManager.getDocument(sessionId);
+      crdtManager.getDocument(sessionId);
       
       if (initialContent) {
         crdtManager.updateDocumentContent(sessionId, initialContent);
@@ -786,7 +786,7 @@ export async function registerRoutes(
   });
 
   // الحصول على قائمة الجلسات النشطة
-  app.get("/api/collaboration/sessions", async (req, res) => {
+  app.get("/api/collaboration/sessions", async (_req, res) => {
     try {
       const { crdtManager } = await import("./services/CRDTManager");
       const activeSessions = crdtManager.getActiveSessions();
@@ -834,7 +834,7 @@ export async function registerRoutes(
   });
 
   // الحصول على اللغات المدعومة
-  app.get("/api/sdk/languages", async (req, res) => {
+  app.get("/api/sdk/languages", async (_req, res) => {
     try {
       const { sdkGeneratorService } = await import("./services/SDKGeneratorService");
       const languages = sdkGeneratorService.getSupportedLanguages();
@@ -895,7 +895,7 @@ export async function registerRoutes(
   });
 
   // الحصول على قائمة جميع النشرات (للتوافق مع النسخة القديمة)
-  app.get("/api/deploy", async (req, res) => {
+  app.get("/api/deploy", async (_req, res) => {
     try {
       const { cloudDeploymentService } = await import("./services/CloudDeploymentService");
       const deployments = cloudDeploymentService.getAllDeployments();
@@ -925,7 +925,7 @@ export async function registerRoutes(
   });
 
   // الحصول على المنصات المدعومة
-  app.get("/api/deploy/platforms", async (req, res) => {
+  app.get("/api/deploy/platforms", async (_req, res) => {
     try {
       const { cloudDeploymentService } = await import("./services/CloudDeploymentService");
       const platforms = cloudDeploymentService.getSupportedPlatforms();

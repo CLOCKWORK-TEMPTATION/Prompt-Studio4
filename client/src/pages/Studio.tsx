@@ -29,11 +29,24 @@ const DEFAULT_SECTIONS: PromptSections = {
   context: ""
 };
 
-const GROQ_MODELS = [
-  { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
-  { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B" },
-  { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B" },
-  { id: "gemma2-9b-it", name: "Gemma 2 9B" },
+const AI_MODELS = [
+  // Groq Models
+  { id: "meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick 17B 128E", provider: "groq" },
+  { id: "meta-llama/llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout 17B 16E", provider: "groq" },
+  { id: "moonshotai/kimi-k2-instruct-0905", name: "Kimi K2 0905", provider: "groq" },
+  { id: "qwen/qwen3-32b", name: "Qwen3-32B", provider: "groq" },
+  
+  // OpenAI Models
+  { id: "gpt-5", name: "GPT-5", provider: "openai" },
+  { id: "gpt-5.2", name: "GPT-5.2", provider: "openai" },
+  
+  // Google Models
+  { id: "models/gemini-3-flash-preview", name: "Gemini 3 Flash Preview", provider: "google" },
+  { id: "models/gemini-3-pro-preview", name: "Gemini 3 Pro Preview", provider: "google" },
+  
+  // Anthropic Models
+  { id: "claude-4-sonnet", name: "Claude Sonnet 4", provider: "anthropic" },
+  { id: "claude-4.5-sonnet", name: "Claude Sonnet 4.5", provider: "anthropic" },
 ];
 
 export default function StudioNew() {
@@ -65,7 +78,7 @@ export default function StudioNew() {
   const [isRunning, setIsRunning] = useState(false);
 
   // Settings
-  const [settings, setSettings] = useState({ model: "llama-3.3-70b-versatile", temperature: 0.7, maxTokens: 1000 });
+  const [settings, setSettings] = useState({ model: "meta-llama/llama-4-maverick-17b-128e-instruct", temperature: 0.7, maxTokens: 1000 });
 
   const { toast } = useToast();
 
@@ -410,9 +423,14 @@ export default function StudioNew() {
                 <SelectValue placeholder="اختر النموذج" />
               </SelectTrigger>
               <SelectContent>
-                {GROQ_MODELS.map((model) => (
+                {AI_MODELS.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
-                    {model.name}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        {model.provider.toUpperCase()}
+                      </span>
+                      {model.name}
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>

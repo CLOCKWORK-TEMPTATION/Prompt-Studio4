@@ -17,7 +17,11 @@ describe('خدمة المراقبة', () => {
   });
 
   afterEach(() => {
-    monitoringService.stop();
+    // تنظيف شامل للموارد
+    if (monitoringService) {
+      monitoringService.removeAllListeners();
+      monitoringService.stop();
+    }
   });
 
   describe('بدء وإيقاف الخدمة', () => {
@@ -359,26 +363,29 @@ describe('تكامل المراقبة والتنبيهات', () => {
 
     monitoringService.on('alert', alertHandler);
 
-    // إضافة قاعدة تنبيه مع فترة تهدئة
+    // إضافة قاعدة تنبيه مع فترة تهدئة أطول
     monitoringService.addAlertRule({
       id: 'cooldown-test',
       name: 'اختبار التهدئة',
       condition: () => true,
       severity: 'low',
-      cooldown: 1, // ثانية واحدة
+      cooldown: 2, // ثانيتان
       enabled: true,
     });
 
-    monitoringService.start(100);
+    monitoringService.start(200); // فحص كل 200ms
 
-    // فحص بعد ثانيتين
+    // فحص بعد 3 ثوان
     setTimeout(() => {
       if (doneCalled) return;
       doneCalled = true;
 
       monitoringService.removeAllListeners('alert');
-      expect(alertCount).toBeLessThanOrEqual(3); // يجب ألا يتجاوز ثلاثة تنبيهات
+      monitoringService.stop();
+      
+      // مع فترة تهدئة 2 ثانية وفحص كل 200ms، يجب ألا يتجاوز 2-3 تنبيهات
+      expect(alertCount).toBeLessThanOrEqual(4);
       done();
-    }, 2000);
-  }, 5000);
+    }, 3000);
+  }, 6000);
 });

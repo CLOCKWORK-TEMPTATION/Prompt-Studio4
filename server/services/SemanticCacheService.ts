@@ -102,11 +102,17 @@ class CacheLogger {
   }
   
   error(message: string, error?: any) {
-    console.error(`[SemanticCache] ERROR: ${message}`, error ? `\n${error.stack || error}` : '');
+    // تجنب الطباعة في بيئة الاختبار لمنع "Cannot log after tests are done"
+    if (process.env.NODE_ENV !== 'test') {
+      console.error(`[SemanticCache] ERROR: ${message}`, error ? `\n${error.stack || error}` : '');
+    }
   }
   
   warn(message: string) {
-    console.warn(`[SemanticCache] WARN: ${message}`);
+    // تجنب الطباعة في بيئة الاختبار
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn(`[SemanticCache] WARN: ${message}`);
+    }
   }
   
   info(message: string) {

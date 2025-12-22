@@ -1,19 +1,19 @@
 import { Link } from "wouter";
-import { 
-  LayoutDashboard, 
-  Library, 
-  BookOpen, 
-  History, 
-  Settings, 
-  BarChart2, 
-  Home as HomeIcon,
-  Users,
-  Code,
-  Cloud,
-  Edit3,
-  Sparkles,
-  Zap,
-  Globe
+import {
+    LayoutDashboard,
+    Library,
+    BookOpen,
+    History,
+    Settings,
+    BarChart2,
+    Home as HomeIcon,
+    Users,
+    Code,
+    Cloud,
+    Edit3,
+    Sparkles,
+    Zap,
+    Globe
 } from "lucide-react";
 
 export default function HomePage() {
@@ -173,7 +173,7 @@ export default function HomePage() {
             </div>
 
             {/* الميزات الجديدة */}
-            <div className="bg-gradient-to-r from-primary/10 to-primary/5 p-8 rounded-xl mb-12">
+            <div className="bg-linear-to-r from-primary/10 to-primary/5 p-8 rounded-xl mb-12">
                 <div className="flex items-center gap-3 mb-4">
                     <Globe className="size-8 text-primary" />
                     <h2 className="text-2xl font-bold">الميزات الجديدة</h2>

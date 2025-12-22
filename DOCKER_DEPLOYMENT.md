@@ -308,3 +308,4 @@ kubectl create -f docker-compose-resolved.yml
 - راقب استخدام الموارد بانتظام
 - حدث الصور والتبعيات بانتظام لسد الثغرات الأمنية
 - استخدم secrets management في الإنتاج بدلاً من متغيرات البيئة
+

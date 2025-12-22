@@ -482,4 +482,4 @@ export class AlertService extends EventEmitter {
 
 // إنشاء مثيل مشترك
 export const alertService = new AlertService();
-export default alertService;
+export default AlertService;

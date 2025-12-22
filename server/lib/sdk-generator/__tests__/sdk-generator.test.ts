@@ -365,7 +365,7 @@ describe('الخاصية 8: توليد SDK', () => {
   });
 
   describe('Property 7: Idempotence', () => {
-    it('should generate the same output when called multiple times', () => {
+    it('should generate the same output when called multiple times (excluding timestamp)', () => {
       const results = Array.from({ length: 10 }, () =>
         SDKGenerator.generate({
           promptConfig: sampleConfig,
@@ -373,9 +373,13 @@ describe('الخاصية 8: توليد SDK', () => {
         })
       );
 
-      const firstCode = results[0].code;
+      // إزالة timestamp من المقارنة لأنه يتغير مع كل استدعاء
+      const normalizeCode = (code: string) => 
+        code.replace(/@generated \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/, '@generated TIMESTAMP');
+
+      const firstCode = normalizeCode(results[0].code);
       results.forEach((result) => {
-        expect(result.code).toBe(firstCode);
+        expect(normalizeCode(result.code)).toBe(firstCode);
       });
     });
   });
@@ -527,7 +531,11 @@ describe('اختبارات الخصائص (Property-Based)', () => {
               options,
             });
 
-            expect(result1.code).toBe(result2.code);
+            // إزالة timestamp من المقارنة لأنه يتغير مع كل استدعاء
+            const normalizeCode = (code: string) => 
+              code.replace(/(Generated: |@generated )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/, '$1TIMESTAMP');
+
+            expect(normalizeCode(result1.code)).toBe(normalizeCode(result2.code));
             expect(result1.filename).toBe(result2.filename);
             expect(result1.dependencies).toEqual(result2.dependencies);
           }

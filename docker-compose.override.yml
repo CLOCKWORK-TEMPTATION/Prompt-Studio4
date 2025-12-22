@@ -31,3 +31,4 @@ services:
 
   redis-commander:
     profiles: []  # Always enable in development
+

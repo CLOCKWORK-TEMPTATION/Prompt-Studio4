@@ -254,6 +254,8 @@ export default function SDKGenerator() {
       description: "تم نسخ الكود إلى الحافظة",
     });
   };
+
+  const generateSampleCode = () => {
     const sampleCode = `# ${sdkConfig.packageName} v${sdkConfig.version}
 # ${sdkConfig.description}
 
@@ -326,7 +328,6 @@ if __name__ == "__main__":
     
     setGeneratedCode(sampleCode);
   };
-
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">

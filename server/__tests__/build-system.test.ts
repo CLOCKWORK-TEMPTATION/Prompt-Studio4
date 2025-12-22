@@ -16,7 +16,7 @@ import { describe, it, expect, beforeAll } from '@jest/globals';
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { execSync, spawn } from 'child_process';
-// Use CommonJS globals provided by Jest runtime
+import { fileURLToPath } from 'url';
 
 describe('الخاصية 11: السلامة', () => {
   // Use workspace root via process.cwd() to be ESM/CJS agnostic
@@ -521,3 +521,4 @@ function formatBytes(bytes: number): string {
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+
