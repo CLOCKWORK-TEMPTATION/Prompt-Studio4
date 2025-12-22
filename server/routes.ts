@@ -11,6 +11,7 @@ import { cacheCleanupScheduler } from "./services/CacheCleanupScheduler";
 import { SDKGenerator } from "./lib/sdk-generator/advanced-index";
 import { runtimeTester } from "./lib/sdk-generator/__tests__/runtime-tester";
 import crypto from "crypto";
+import { aiRateLimiter, authRateLimiter, uploadRateLimiter } from "./middleware/security";
 
 // Helper to substitute variables in text
 function substituteVariables(
@@ -265,8 +266,8 @@ export async function registerRoutes(
     }
   });
 
-  // AI Endpoints
-  app.post("/api/ai/run", async (req, res) => {
+  // AI Endpoints (with rate limiting)
+  app.post("/api/ai/run", aiRateLimiter, async (req, res) => {
     try {
       const validated = runSchema.parse(req.body);
 
@@ -344,7 +345,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ai/critique", async (req, res) => {
+  app.post("/api/ai/critique", aiRateLimiter, async (req, res) => {
     try {
       const validated = critiqueSchema.parse(req.body);
 
@@ -385,7 +386,7 @@ export async function registerRoutes(
     }).optional(),
   });
 
-  app.post("/api/agents/compose", async (req, res) => {
+  app.post("/api/agents/compose", aiRateLimiter, async (req, res) => {
     try {
       const validated = composeSchema.parse(req.body);
 
@@ -453,8 +454,8 @@ export async function registerRoutes(
     }
   });
 
-  // Session API Key Management
-  app.post("/api/session/api-key", (req, res) => {
+  // Session API Key Management (with auth rate limiting)
+  app.post("/api/session/api-key", authRateLimiter, (req, res) => {
     try {
       const { apiKey } = req.body;
       if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
@@ -936,10 +937,10 @@ export async function registerRoutes(
   });
 
   // ============================================================
-  // Large File Upload (Streaming)
+  // Large File Upload (Streaming) - with upload rate limiting
   // ============================================================
   // معالجة رفع ملفات كبيرة بدون تحميلها بالكامل في الذاكرة
-  app.post("/api/files/upload", async (req, res) => {
+  app.post("/api/files/upload", uploadRateLimiter, async (req, res) => {
     try {
       // نسمح فقط بـ application/octet-stream للرفع الثنائي
       const ct = (req.headers["content-type"] || "").toString().toLowerCase();

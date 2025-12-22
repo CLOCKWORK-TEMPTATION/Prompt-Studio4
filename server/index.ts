@@ -11,6 +11,7 @@ import { monitoringService } from "./services/MonitoringService";
 import { alertService } from "./services/AlertService";
 import { setupMonitoringMiddleware } from "./middleware/monitoring";
 import monitoringRoutes from "./routes/monitoring";
+import { securityHeaders, generalRateLimiter, requestId, validateContentLength } from "./middleware/security";
 
 const app = express();
 const httpServer = createServer(app);
@@ -20,6 +21,16 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+// Security middleware
+app.use(requestId);
+app.use(securityHeaders);
+
+// Content length validation (10MB max for most requests)
+app.use(validateContentLength(10 * 1024 * 1024));
+
+// Rate limiting for API routes
+app.use('/api', generalRateLimiter);
 
 app.use(
   express.json({
