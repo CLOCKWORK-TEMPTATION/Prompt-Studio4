@@ -25,9 +25,61 @@ export interface DeploymentResult {
 
 export class DeploymentService {
     private templatesPath: string;
+    private allowedProviders = ['vercel', 'cloudflare', 'aws', 'gcp'];
 
     constructor(templatesPath: string = './deployment-templates') {
-        this.templatesPath = templatesPath;
+        // تحويل المسار إلى مسار مطلق آمن
+        this.templatesPath = path.resolve(templatesPath);
+    }
+
+    /**
+     * حماية من Path Traversal - التأكد من أن المسار آمن ولا يخرج من المجلد المسموح
+     */
+    private validatePath(inputPath: string, basePath: string): string {
+        // إزالة أي محارف خطيرة
+        const sanitizedInput = inputPath.replace(/[<>:"|?*]/g, '').replace(/\.\./g, '');
+        
+        // تحويل المسارات إلى مسارات مطلقة
+        const resolvedBase = path.resolve(basePath);
+        const resolvedInput = path.resolve(basePath, sanitizedInput);
+        
+        // التأكد من أن المسار المطلوب داخل المجلد الأساسي
+        if (!resolvedInput.startsWith(resolvedBase + path.sep) && resolvedInput !== resolvedBase) {
+            throw new Error(`Path traversal detected: ${inputPath}`);
+        }
+        
+        return resolvedInput;
+    }
+
+    /**
+     * التحقق من صحة اسم المقدم
+     */
+    private validateProvider(provider: string): string {
+        if (!this.allowedProviders.includes(provider)) {
+            throw new Error(`Invalid provider: ${provider}`);
+        }
+        return provider;
+    }
+
+    /**
+     * إنشاء مسار آمن للنشر
+     */
+    private createSafeDeploymentPath(provider: string): string {
+        const validProvider = this.validateProvider(provider);
+        const timestamp = Date.now();
+        const deploymentName = `deployment-${timestamp}`;
+        
+        // إنشاء مسار آمن
+        const providerPath = this.validatePath(validProvider, this.templatesPath);
+        return this.validatePath(deploymentName, providerPath);
+    }
+
+    /**
+     * كتابة ملف بشكل آمن
+     */
+    private async writeFileSecurely(basePath: string, fileName: string, content: string): Promise<void> {
+        const safePath = this.validatePath(fileName, basePath);
+        await fs.writeFile(safePath, content, { encoding: 'utf8' });
     }
 
     /**
@@ -35,6 +87,9 @@ export class DeploymentService {
      */
     async deploy(config: DeploymentConfig): Promise<DeploymentResult> {
         try {
+            // التحقق من صحة المقدم
+            this.validateProvider(config.provider);
+
             switch (config.provider) {
                 case 'vercel':
                     return await this.deployToVercel(config);
@@ -59,8 +114,7 @@ export class DeploymentService {
      * Deploy to Vercel
      */
     private async deployToVercel(config: DeploymentConfig): Promise<DeploymentResult> {
-        const templatePath = path.join(this.templatesPath, 'vercel');
-        const deploymentPath = path.join(templatePath, `deployment-${Date.now()}`);
+        const deploymentPath = this.createSafeDeploymentPath('vercel');
 
         try {
             // Create deployment directory
@@ -84,28 +138,30 @@ export class DeploymentService {
                         src: '/(.*)',
                         dest: '/index.html'
                     }
-                ],
-                env: {
-                    ...config.config,
-                    NODE_ENV: config.environment
-                },
-                regions: config.region ? [config.region] : ['iad1']
+                ]
             };
 
-            await fs.writeFile(
-                path.join(deploymentPath, 'vercel.json'),
+            // Write vercel.json securely
+            await this.writeFileSecurely(
+                deploymentPath,
+                'vercel.json',
                 JSON.stringify(vercelConfig, null, 2)
             );
 
             // Copy application files
             await this.copyAppFiles(deploymentPath);
 
-            // Deploy using Vercel CLI
-            // Note: In a real environment, you'd likely use the Vercel API or a sanitized CLI command
-            // Here we assume Vercel CLI is installed or use npx
+            // Deploy using Vercel CLI (sanitized command)
+            const sanitizedPath = deploymentPath.replace(/[;&|`$()]/g, '');
             const { stdout, stderr } = await execAsync(
-                `cd ${deploymentPath} && npx vercel --prod --yes`,
-                { env: { ...process.env, VERCEL_TOKEN: config.config.vercelToken as string } }
+                `cd "${sanitizedPath}" && npx vercel --prod --yes`,
+                { 
+                    env: { 
+                        ...process.env, 
+                        VERCEL_TOKEN: config.config.vercelToken as string 
+                    },
+                    timeout: 300000 // 5 minutes timeout
+                }
             );
 
             const logs = this.parseLogs(stdout + stderr);
@@ -125,16 +181,19 @@ export class DeploymentService {
             } catch (cleanupError) {
                 console.error('Cleanup failed:', cleanupError);
             }
-            throw error;
+
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Vercel deployment failed'
+            };
         }
     }
 
     /**
-     * Deploy to Cloudflare Pages
+     * Deploy to Cloudflare Workers
      */
     private async deployToCloudflare(config: DeploymentConfig): Promise<DeploymentResult> {
-        const templatePath = path.join(this.templatesPath, 'cloudflare');
-        const deploymentPath = path.join(templatePath, `deployment-${Date.now()}`);
+        const deploymentPath = this.createSafeDeploymentPath('cloudflare');
 
         try {
             await fs.mkdir(deploymentPath, { recursive: true });
@@ -142,43 +201,8 @@ export class DeploymentService {
             // Generate wrangler.toml
             const wranglerConfig = `
 name = "promptstudio-${config.environment}"
-compatibility_date = "${new Date().toISOString().split('T')[0]}"
-
-[env.${config.environment}]
-account_id = "${config.config.accountId}"
-zone_id = "${config.config.zoneId}"
-
-[[pages_build_config]]
-build_command = "npm run build"
-destination_dir = "dist"
-root_dir = "."
-
-[vars]
-NODE_ENV = "${config.environment}"
-${Object.entries(config.config)
-                    .filter(([key]) => !['accountId', 'zoneId', 'apiToken'].includes(key))
-                    .map(([key, value]) => `${key} = "${value}"`)
-                    .join('\n')}
-      `;
-
-            await fs.writeFile(
-                path.join(deploymentPath, 'wrangler.toml'),
-                wranglerConfig
-            );
-
-            await this.copyAppFiles(deploymentPath);
-
-            const { stdout, stderr } = await execAsync(
-                `cd ${deploymentPath} && npx wrangler pages deploy dist --commit-dirty=true`,
-                {
-                    env: {
-                        ...process.env,
-                        CLOUDFLARE_ACCOUNT_ID: config.config.accountId as string,
-                        CLOUDFLARE_API_TOKEN: config.config.apiToken as string
-                    }
-                }
-            );
-
+main = "dist/worker.js"
+com
             const logs = this.parseLogs(stdout + stderr);
             const deploymentUrl = this.extractDeploymentUrl(logs);
 

@@ -12,6 +12,16 @@ interface MonitoringRequest extends Request {
 }
 
 /**
+ * تنظيف النصوص من محارف التحكم لمنع Log Injection
+ * يزيل أي محارف قد تسمح بحقن أسطر جديدة في السجلات
+ */
+function sanitizeForLog(input: string | undefined): string {
+  if (!input) return '';
+  // إزالة محارف التحكم والأسطر الجديدة
+  return input.replace(/[\r\n\t\x00-\x1F\x7F]/g, '').substring(0, 200);
+}
+
+/**
  * Middleware لتسجيل بداية الطلب
  */
 export function requestStartMiddleware(req: MonitoringRequest, res: Response, next: NextFunction): void {
@@ -45,12 +55,16 @@ export function requestEndMiddleware(req: MonitoringRequest, res: Response, next
       
       // تسجيل الطلبات البطيئة
       if (responseTime > 5000) { // أكثر من 5 ثواني
-        console.warn(`[Monitoring] طلب بطيء: ${req.method} ${req.path} - ${responseTime.toFixed(2)}ms`);
+        const safeMethod = sanitizeForLog(req.method);
+        const safePath = sanitizeForLog(req.path);
+        console.warn(`[Monitoring] طلب بطيء: ${safeMethod} ${safePath} - ${responseTime.toFixed(2)}ms`);
       }
       
       // تسجيل الأخطاء
       if (res.statusCode >= 500) {
-        console.error(`[Monitoring] خطأ خادم: ${req.method} ${req.path} - ${res.statusCode}`);
+        const safeMethod = sanitizeForLog(req.method);
+        const safePath = sanitizeForLog(req.path);
+        console.error(`[Monitoring] خطأ خادم: ${safeMethod} ${safePath} - ${res.statusCode}`);
       }
     }
   });
@@ -76,16 +90,20 @@ export function errorMonitoringMiddleware(
   res: Response,
   next: NextFunction
 ): void {
-  // تسجيل الخطأ
-  console.error(`[Monitoring] خطأ غير معالج في ${req.method} ${req.path}:`, error);
+  // تسجيل الخطأ مع تنظيف المدخلات
+  const safeMethod = sanitizeForLog(req.method);
+  const safePath = sanitizeForLog(req.path);
+  const safeErrorMessage = sanitizeForLog(error.message);
+  
+  console.error(`[Monitoring] خطأ غير معالج في ${safeMethod} ${safePath}: ${safeErrorMessage}`);
   
   // إرسال تنبيه للأخطاء الحرجة
   monitoringService.emit('error', {
     type: 'unhandled_error',
-    path: req.path,
-    method: req.method,
-    error: error.message,
-    stack: error.stack,
+    path: safePath,
+    method: safeMethod,
+    error: safeErrorMessage,
+    stack: error.stack ? sanitizeForLog(error.stack) : undefined,
     requestId: req.requestId,
     timestamp: Date.now(),
   });

@@ -80,6 +80,11 @@ app.use(
   }),
 );
 
+// Sanitize log messages to prevent log injection
+function sanitizeLogMessage(message: string): string {
+  return message.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -88,7 +93,7 @@ export function log(message: string, source = "express") {
     hour12: true,
   });
 
-  console.log(`${formattedTime} [${source}] ${message}`);
+  console.log(`${formattedTime} [${source}] ${sanitizeLogMessage(message)}`);
 }
 
 app.use((req, res, next) => {
@@ -105,7 +110,9 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      const method = sanitizeLogMessage(req.method);
+      const sanitizedPath = sanitizeLogMessage(path);
+      let logLine = `${method} ${sanitizedPath} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }

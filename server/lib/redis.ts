@@ -19,10 +19,12 @@ class RedisClient {
 
             RedisClient.instance.on('error', (error) => {
                 // Suppress connection errors to avoid spamming logs in dev without Redis
+                // Sanitize error message to prevent log injection
+                const sanitizedMessage = error.message?.replace(/[\r\n]/g, ' ').substring(0, 200);
                 if (process.env.NODE_ENV !== 'production') {
-                    console.warn('Redis connection warning (ensure Redis is running for collaboration features):', error.message);
+                    console.warn('Redis connection warning (ensure Redis is running for collaboration features):', sanitizedMessage);
                 } else {
-                    console.error('Redis connection error:', error);
+                    console.error('Redis connection error:', sanitizedMessage);
                 }
             });
 

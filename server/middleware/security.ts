@@ -31,9 +31,9 @@ const rateLimitStores: { [endpoint: string]: RateLimitStore } = {};
 // Cleanup old entries every 5 minutes
 setInterval(() => {
   const now = Date.now();
-  for (const storeName in rateLimitStores) {
+  for (const storeName of Object.keys(rateLimitStores)) {
     const store = rateLimitStores[storeName];
-    for (const key in store) {
+    for (const key of Object.keys(store)) {
       if (store[key].resetTime < now) {
         delete store[key];
       }
@@ -217,12 +217,10 @@ function deepSanitize(obj: any): any {
   }
   if (obj && typeof obj === "object") {
     const sanitized: any = {};
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        // Also sanitize keys
-        const sanitizedKey = /^[\w\-$]+$/.test(key) ? key : sanitizeString(key);
-        sanitized[sanitizedKey] = deepSanitize(obj[key]);
-      }
+    for (const key of Object.keys(obj)) {
+      // Also sanitize keys
+      const sanitizedKey = /^[\w\-$]+$/.test(key) ? key : sanitizeString(key);
+      sanitized[sanitizedKey] = deepSanitize(obj[key]);
     }
     return sanitized;
   }
@@ -263,8 +261,38 @@ export function requestId(req: Request, res: Response, next: NextFunction) {
 // Export all security middleware
 // ============================================================
 
+/**
+ * CSRF Protection middleware using Origin/Referer check
+ */
+export function csrfProtection(req: Request, res: Response, next: NextFunction) {
+  // Safe methods don't need CSRF protection
+  const safeMethods = ["GET", "HEAD", "OPTIONS"];
+  if (safeMethods.includes(req.method)) {
+    return next();
+  }
+
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+  const host = req.headers.host;
+
+  // In production, we must have a valid origin or referer that matches our host
+  if (process.env.NODE_ENV === "production") {
+    if (!origin && !referer) {
+      return res.status(403).json({ error: "طلب غير مصرح به (CSRF Protection)" });
+    }
+
+    const source = origin || referer;
+    if (source && host && !source.includes(host)) {
+      return res.status(403).json({ error: "مصدر الطلب غير موثوق (CSRF Protection)" });
+    }
+  }
+
+  next();
+}
+
 export const securityMiddleware = {
   securityHeaders,
+  csrfProtection,
   generalRateLimiter,
   aiRateLimiter,
   authRateLimiter,

@@ -262,6 +262,10 @@ describe('الخاصية 11: السلامة', () => {
           .slice(0, 3); // فحص أول 3 ملفات
 
         migrationFiles.forEach((file: string) => {
+          // Validate filename to prevent path traversal
+          if (file.includes('..') || file.includes('/') || file.includes('\\')) {
+            throw new Error(`Invalid filename detected: ${file}`);
+          }
           const filePath = join(migrationsDir, file);
           const content = readFileSync(filePath, 'utf-8');
 

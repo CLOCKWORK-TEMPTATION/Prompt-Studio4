@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { monitoringService } from '../services/MonitoringService';
 import { alertService } from '../services/AlertService';
+import { generalRateLimiter, csrfProtection } from '../middleware/security';
 
 /**
  * مسارات API للمراقبة والتنبيهات
@@ -15,7 +16,7 @@ const router = Router();
 /**
  * الحصول على المقاييس الحالية
  */
-router.get('/metrics/current', (req, res) => {
+router.get('/metrics/current', generalRateLimiter, (req, res) => {
   try {
     const metrics = monitoringService.getCurrentMetrics();
     if (!metrics) {
@@ -30,7 +31,7 @@ router.get('/metrics/current', (req, res) => {
 /**
  * الحصول على المقاييس التاريخية
  */
-router.get('/metrics/history', (req, res) => {
+router.get('/metrics/history', generalRateLimiter, (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
     const metrics = monitoringService.getHistoricalMetrics(limit);
@@ -58,7 +59,7 @@ router.get('/health', (req, res) => {
 /**
  * بدء خدمة المراقبة
  */
-router.post('/start', (req, res) => {
+router.post('/start', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const interval = parseInt(req.body.interval) || 30000;
     monitoringService.start(interval);
@@ -71,7 +72,7 @@ router.post('/start', (req, res) => {
 /**
  * إيقاف خدمة المراقبة
  */
-router.post('/stop', (_req, res) => {
+router.post('/stop', csrfProtection, generalRateLimiter, (_req, res) => {
   try {
     monitoringService.stop();
     res.json({ success: true, message: 'تم إيقاف خدمة المراقبة' });
@@ -112,7 +113,7 @@ router.get('/alerts', (req, res) => {
 /**
  * حل تنبيه
  */
-router.post('/alerts/:alertId/resolve', (req, res) => {
+router.post('/alerts/:alertId/resolve', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const { alertId } = req.params;
     const success = monitoringService.resolveAlert(alertId);
@@ -141,7 +142,7 @@ router.get('/alert-rules', (req, res) => {
 /**
  * إضافة قاعدة تنبيه جديدة
  */
-router.post('/alert-rules', (req, res) => {
+router.post('/alert-rules', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const rule = req.body;
     
@@ -160,7 +161,7 @@ router.post('/alert-rules', (req, res) => {
 /**
  * تحديث قاعدة تنبيه
  */
-router.put('/alert-rules/:ruleId', (req, res) => {
+router.put('/alert-rules/:ruleId', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const { ruleId } = req.params;
     const updates = req.body;
@@ -179,7 +180,7 @@ router.put('/alert-rules/:ruleId', (req, res) => {
 /**
  * حذف قاعدة تنبيه
  */
-router.delete('/alert-rules/:ruleId', (req, res) => {
+router.delete('/alert-rules/:ruleId', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const { ruleId } = req.params;
     const success = monitoringService.removeAlertRule(ruleId);
@@ -212,7 +213,7 @@ router.get('/alert-channels', (req, res) => {
 /**
  * إضافة قناة تنبيه جديدة
  */
-router.post('/alert-channels', (req, res) => {
+router.post('/alert-channels', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const channel = req.body;
     
@@ -231,7 +232,7 @@ router.post('/alert-channels', (req, res) => {
 /**
  * تحديث قناة تنبيه
  */
-router.put('/alert-channels/:channelId', (req, res) => {
+router.put('/alert-channels/:channelId', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const { channelId } = req.params;
     const updates = req.body;
@@ -250,7 +251,7 @@ router.put('/alert-channels/:channelId', (req, res) => {
 /**
  * حذف قناة تنبيه
  */
-router.delete('/alert-channels/:channelId', (req, res) => {
+router.delete('/alert-channels/:channelId', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const { channelId } = req.params;
     const success = alertService.removeChannel(channelId);
@@ -267,7 +268,7 @@ router.delete('/alert-channels/:channelId', (req, res) => {
 /**
  * اختبار قناة تنبيه
  */
-router.post('/alert-channels/:channelId/test', async (req, res) => {
+router.post('/alert-channels/:channelId/test', csrfProtection, generalRateLimiter, async (req, res) => {
   try {
     const { channelId } = req.params;
     const success = await alertService.testChannel(channelId);
@@ -299,7 +300,7 @@ router.get('/notifications/stats', (req, res) => {
 /**
  * تنظيف الإشعارات القديمة
  */
-router.post('/notifications/cleanup', (req, res) => {
+router.post('/notifications/cleanup', csrfProtection, generalRateLimiter, (req, res) => {
   try {
     const maxAge = parseInt(req.body.maxAge) || 24 * 60 * 60 * 1000; // 24 ساعة افتراضياً
     const removedCount = alertService.cleanupOldNotifications(maxAge);
