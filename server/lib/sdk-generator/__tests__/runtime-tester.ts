@@ -422,7 +422,8 @@ if __name__ == "__main__":
       // في بيئة الاختبار، نتحقق من بناء الجملة الأساسي فقط
       try {
         const fs = require('fs');
-        const code = fs.readFileSync(tsFiles[0], 'utf-8');
+        const validatedTsFile = validatePath(tsFiles[0], this.tempDir);
+        const code = fs.readFileSync(validatedTsFile, 'utf-8');
 
         // تحقق بسيط من بناء الجملة
         const hasBasicSyntax =
@@ -482,7 +483,8 @@ if __name__ == "__main__":
       // تحقق بسيط من بناء الجملة باستخدام Function constructor
       try {
         const fs = require('fs');
-        const code = fs.readFileSync(jsFiles[0], 'utf-8');
+        const validatedJsFile = validatePath(jsFiles[0], this.tempDir);
+        const code = fs.readFileSync(validatedJsFile, 'utf-8');
 
         // تحقق بسيط من بناء الجملة
         const hasBasicSyntax =
@@ -542,7 +544,8 @@ if __name__ == "__main__":
       // تحقق بسيط من بناء الجملة
       try {
         const fs = require('fs');
-        const code = fs.readFileSync(pyFiles[0], 'utf-8');
+        const validatedPyFile = validatePath(pyFiles[0], this.tempDir);
+        const code = fs.readFileSync(validatedPyFile, 'utf-8');
 
         // تحقق بسيط من بناء الجملة Python
         const hasBasicSyntax =
@@ -791,7 +794,9 @@ if __name__ == "__main__":
     try {
       files.forEach(file => {
         try {
-          unlinkSync(file);
+          // Validate path before deletion to prevent path traversal
+          const validatedFile = validatePath(file, this.tempDir);
+          unlinkSync(validatedFile);
         } catch (error) {
           // Ignore cleanup errors
         }
@@ -832,7 +837,7 @@ export async function testAllSDKs(
       }
 
     } catch (error) {
-      console.error(`Failed to test ${language} SDK:`, error);
+      console.error(`Failed to test ${sanitizeLog(language)} SDK:`, sanitizeLog(error instanceof Error ? error.message : String(error)));
       results[language] = {
         language,
         success: false,
