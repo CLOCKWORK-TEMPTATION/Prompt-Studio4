@@ -14,6 +14,7 @@ import AdvancedEditor from "@/pages/AdvancedEditor";
 import Collaboration from "@/pages/Collaboration";
 import SDKGenerator from "@/pages/SDKGenerator";
 import CloudDeployment from "@/pages/CloudDeployment";
+import Monitoring from "@/pages/Monitoring";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -30,6 +31,7 @@ function Router() {
         <Route path="/analytics" component={Analytics} />
         <Route path="/sdk-generator" component={SDKGenerator} />
         <Route path="/cloud-deployment" component={CloudDeployment} />
+        <Route path="/monitoring" component={Monitoring} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

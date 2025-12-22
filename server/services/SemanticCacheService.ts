@@ -120,58 +120,132 @@ class CacheLogger {
   }
 }
 
+// Database connection checker
+class DatabaseChecker {
+  private static isAvailable: boolean | null = null;
+  
+  static async checkConnection(): Promise<boolean> {
+    if (DatabaseChecker.isAvailable !== null) {
+      return DatabaseChecker.isAvailable;
+    }
+    
+    try {
+      await db.select().from(semanticCache).limit(1);
+      DatabaseChecker.isAvailable = true;
+      return true;
+    } catch (error: any) {
+      const logger = CacheLogger.getInstance();
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        logger.warn('Database connection unavailable - using fallback mode');
+      } else {
+        logger.error('Database connection check failed', error);
+      }
+      DatabaseChecker.isAvailable = false;
+      return false;
+    }
+  }
+  
+  static reset() {
+    DatabaseChecker.isAvailable = null;
+  }
+}
+
 export class SemanticCacheService {
   private cacheConfig: CacheConfigType | null = null;
   private logger = CacheLogger.getInstance();
+  private fallbackCache = new Map<string, any>();
+  private fallbackConfig: CacheConfigType = {
+    enabled: true,
+    similarityThreshold: 0.85,
+    defaultTTLSeconds: 3600,
+    maxCacheSize: 1000,
+    invalidationRules: []
+  };
 
   public async getConfig(): Promise<CacheConfigType> {
     if (this.cacheConfig) {
       return this.cacheConfig;
     }
 
-    let dbConfig = await db.query.cacheConfig.findFirst();
-
-    if (!dbConfig) {
-      const [newConfig] = await db.insert(cacheConfig).values({
-        enabled: true,
-        similarityThreshold: 0.85,
-        defaultTTLSeconds: 3600,
-        maxCacheSize: 10000,
-        invalidationRules: [],
-      }).returning();
-      dbConfig = newConfig;
+    const dbAvailable = await DatabaseChecker.checkConnection();
+    if (!dbAvailable) {
+      this.logger.warn('Using fallback configuration - database unavailable');
+      this.cacheConfig = this.fallbackConfig;
+      return this.cacheConfig;
     }
 
-    this.cacheConfig = {
-      ...dbConfig,
-      invalidationRules: dbConfig.invalidationRules || [],
-      updatedAt: dbConfig.updatedAt.toISOString(),
-    };
+    try {
+      let dbConfig = await db.query.cacheConfig.findFirst();
 
-    return this.cacheConfig!;
+      if (!dbConfig) {
+        const [newConfig] = await db.insert(cacheConfig).values({
+          enabled: true,
+          similarityThreshold: 0.85,
+          defaultTTLSeconds: 3600,
+          maxCacheSize: 10000,
+          invalidationRules: [],
+        }).returning();
+        dbConfig = newConfig;
+      }
+
+      this.cacheConfig = {
+        ...dbConfig,
+        invalidationRules: dbConfig.invalidationRules || [],
+        updatedAt: dbConfig.updatedAt.toISOString(),
+      };
+
+      return this.cacheConfig!;
+    } catch (error: any) {
+      this.logger.error('Failed to get config from database, using fallback', error);
+      DatabaseChecker.reset();
+      this.cacheConfig = this.fallbackConfig;
+      return this.cacheConfig;
+    }
   }
 
   async updateConfig(updates: Partial<CacheConfigType>): Promise<CacheConfigType> {
     const currentConfig = await this.getConfig();
+    const dbAvailable = await DatabaseChecker.checkConnection();
+    
+    if (!dbAvailable) {
+      this.logger.warn('Database unavailable - updating fallback config only');
+      this.cacheConfig = {
+        ...currentConfig,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      return this.cacheConfig;
+    }
 
-    const [updatedConfig] = await db.update(cacheConfig)
-      .set({
-        enabled: updates.enabled ?? currentConfig.enabled,
-        similarityThreshold: updates.similarityThreshold ?? currentConfig.similarityThreshold,
-        defaultTTLSeconds: updates.defaultTTLSeconds ?? currentConfig.defaultTTLSeconds,
-        maxCacheSize: updates.maxCacheSize ?? currentConfig.maxCacheSize,
-        invalidationRules: updates.invalidationRules ?? currentConfig.invalidationRules,
-      })
-      .where(eq(cacheConfig.id, currentConfig.id!))
-      .returning();
+    try {
+      const [updatedConfig] = await db.update(cacheConfig)
+        .set({
+          enabled: updates.enabled ?? currentConfig.enabled,
+          similarityThreshold: updates.similarityThreshold ?? currentConfig.similarityThreshold,
+          defaultTTLSeconds: updates.defaultTTLSeconds ?? currentConfig.defaultTTLSeconds,
+          maxCacheSize: updates.maxCacheSize ?? currentConfig.maxCacheSize,
+          invalidationRules: updates.invalidationRules ?? currentConfig.invalidationRules,
+        })
+        .where(eq(cacheConfig.id, currentConfig.id!))
+        .returning();
 
-    this.cacheConfig = {
-      ...updatedConfig,
-      invalidationRules: updatedConfig.invalidationRules || [],
-      updatedAt: updatedConfig.updatedAt.toISOString(),
-    };
+      this.cacheConfig = {
+        ...updatedConfig,
+        invalidationRules: updatedConfig.invalidationRules || [],
+        updatedAt: updatedConfig.updatedAt.toISOString(),
+      };
 
-    return this.cacheConfig!;
+      return this.cacheConfig!;
+    } catch (error: any) {
+      this.logger.error('Failed to update config in database, using fallback', error);
+      DatabaseChecker.reset();
+      this.cacheConfig = {
+        ...currentConfig,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      return this.cacheConfig;
+    }
   }
 
   private generateHash(prompt: string): string {
@@ -297,32 +371,49 @@ export class SemanticCacheService {
   }
 
   private async findByHash(hash: string, model?: string): Promise<SemanticCacheEntry | null> {
-    const whereClause = and(
-      eq(semanticCache.promptHash, hash),
-      sql`${semanticCache.expiresAt} > NOW()`
-    );
-
-    // Filter by model if provided
-    // Note: Drizzle structure for dynamic 'and' is explicit
-
-    // We fetch and filter because finding by generic 'and' with conditionals is verbose in one go
-    // Simpler: fetch match, check model.
-    const entry = await db.query.semanticCache.findFirst({
-      where: whereClause,
-      with: {
-        // @ts-ignore - relation name might need checking in schema.ts (we didn't explicitly define relations in the schema snippet above, this expects drizzle relations to be defined. If not, we fetch manually)
-        // For safety, let's assume no relations defined and fetch tags manually if needed.
-        // checking schema.ts content from Step 180 and 186. NO RELATIONS DEFINED.
-        // We must manual fetch tags.
+    const dbAvailable = await DatabaseChecker.checkConnection();
+    
+    if (!dbAvailable) {
+      // Fallback to in-memory cache
+      const entry = this.fallbackCache.get(hash);
+      if (!entry || Date.now() > entry.expiresAt) {
+        return null;
       }
-    });
+      if (model && entry.model !== model && entry.model !== 'unknown') {
+        return null;
+      }
+      return entry;
+    }
 
-    if (!entry) return null;
-    if (model && entry.model !== model && entry.model !== 'unknown') return null;
+    try {
+      const whereClause = and(
+        eq(semanticCache.promptHash, hash),
+        sql`${semanticCache.expiresAt} > NOW()`
+      );
 
-    const tags = await db.select().from(cacheTags).where(eq(cacheTags.cacheId, entry.id));
+      const entry = await db.query.semanticCache.findFirst({
+        where: whereClause
+      });
 
-    return { ...entry, tags };
+      if (!entry) return null;
+      if (model && entry.model !== model && entry.model !== 'unknown') return null;
+
+      const tags = await db.select().from(cacheTags).where(eq(cacheTags.cacheId, entry.id));
+
+      return { ...entry, tags };
+    } catch (error: any) {
+      this.logger.error('Database query failed in findByHash, using fallback', error);
+      DatabaseChecker.reset();
+      
+      const entry = this.fallbackCache.get(hash);
+      if (!entry || Date.now() > entry.expiresAt) {
+        return null;
+      }
+      if (model && entry.model !== model && entry.model !== 'unknown') {
+        return null;
+      }
+      return entry;
+    }
   }
 
   private async findSimilar(
@@ -331,23 +422,48 @@ export class SemanticCacheService {
     model?: string,
     tags?: string[]
   ): Promise<CacheSearchResult | null> {
-    // 1. Get candidate entries (non-expired)
-    // Optimization: In a real vector DB, we'd use pgvector. Here we scan. 
-    // Limit scan to 1000 most recent.
+    // 1. Build pre-filtered candidate set (non-expired, optionally model-filtered, optionally tag-filtered)
+    // Note: With pgvector we'd do ANN search. Here we narrow the set before cosine similarity.
 
-    let query = db.select().from(semanticCache).where(sql`${semanticCache.expiresAt} > NOW()`).orderBy(desc(semanticCache.createdAt)).limit(1000);
+    const baseWhere: any[] = [sql`${semanticCache.expiresAt} > NOW()`];
 
-    const candidates = await query;
+    // Model prefilter: allow 'unknown' to match as a fallback
+    if (model && model.trim().length > 0) {
+      baseWhere.push(sql`(${semanticCache.model} = ${model} OR ${semanticCache.model} = 'unknown')`);
+    }
+
+    // Tag prefilter: gather cache IDs that have any of requested tags
+    let tagFilteredIds: string[] | null = null;
+    if (tags && tags.length > 0) {
+      const tagRows = await db
+        .select({ cacheId: cacheTags.cacheId })
+        .from(cacheTags)
+        .where(inArray(cacheTags.name, tags));
+      tagFilteredIds = Array.from(new Set(tagRows.map((t) => t.cacheId)));
+      if (tagFilteredIds.length > 0) {
+        baseWhere.push(inArray(semanticCache.id, tagFilteredIds));
+      } else {
+        // No candidates with these tags
+        return null;
+      }
+    }
+
+    const whereClause = baseWhere.length === 1 ? baseWhere[0] : and(...baseWhere);
+
+    // Limit scan aggressively to reduce memory/time; prefer most recent entries
+    const candidates = await db
+      .select()
+      .from(semanticCache)
+      .where(whereClause)
+      .orderBy(desc(semanticCache.createdAt))
+      .limit(500);
     let bestMatch: { entry: SemanticCache; similarity: number } | null = null;
 
     for (const entry of candidates) {
-      if (model && entry.model !== model && entry.model !== 'unknown') continue;
-
-      // Manual tag filtering if tags provided
-      if (tags && tags.length > 0) {
-        const entryTags = await db.select().from(cacheTags).where(eq(cacheTags.cacheId, entry.id));
-        const entryTagNames = entryTags.map(t => t.name);
-        if (!tags.some(t => entryTagNames.includes(t))) continue;
+      // model filtering already handled in WHERE
+      // Manual tag filtering: if tagFilteredIds provided, skip IDs not in set
+      if (tagFilteredIds && tagFilteredIds.length > 0 && !tagFilteredIds.includes(entry.id)) {
+        continue;
       }
 
       const entryEmbedding = entry.embedding as number[];
@@ -375,34 +491,13 @@ export class SemanticCacheService {
 
       // التحقق من صحة المدخلات
       if (!prompt || prompt.trim().length === 0) {
-        throw new Error('INVALID_INPUT: Prompt cannot be empty');
+        throw new Error('CACHE_INVALID_INPUT: Prompt cannot be empty');
       }
       if (!response || response.trim().length === 0) {
-        throw new Error('INVALID_INPUT: Response cannot be empty');
+        throw new Error('CACHE_INVALID_INPUT: Response cannot be empty');
       }
 
       this.logger.debug(`Storing cache entry for prompt length: ${prompt.length}`);
-
-      // Check size and evict if needed (مع معالجة الأخطاء)
-      try {
-        const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(semanticCache);
-        if (count >= config.maxCacheSize) {
-          this.logger.info(`Cache size limit reached (${count}/${config.maxCacheSize}), evicting oldest entries`);
-          // Delete oldest 10%
-          const limit = Math.floor(config.maxCacheSize * 0.1);
-          const toDeleteIds = await db.select({ id: semanticCache.id })
-            .from(semanticCache)
-            .orderBy(semanticCache.lastAccessedAt)
-            .limit(limit);
-
-          if (toDeleteIds.length > 0) {
-            const deleted = await db.delete(semanticCache).where(inArray(semanticCache.id, toDeleteIds.map(d => d.id)));
-            this.logger.info(`Evicted ${toDeleteIds.length} old cache entries`);
-          }
-        }
-      } catch (error) {
-        this.logger.warn(`Failed to check/evict cache size, continuing anyway: ${error}`);
-      }
 
       const promptHash = this.generateHash(prompt);
       
@@ -430,90 +525,195 @@ export class SemanticCacheService {
       const ttl = ttlSeconds || config.defaultTTLSeconds;
       const expiresAt = new Date(Date.now() + ttl * 1000);
       const tokensSaved = Math.ceil(response.length / 4);
-
       const id = crypto.randomUUID();
 
-      const [entry] = await db.insert(semanticCache).values({
-        id,
-        prompt,
-        promptHash,
-        embedding: embedding as any, // jsonb
-        response,
-        model: model || 'unknown',
-        tokensSaved,
-        expiresAt,
-        userId
-      }).returning();
-
-      if (tags.length > 0) {
-        try {
-          await db.insert(cacheTags).values(
-            tags.map(name => ({
-              name,
-              cacheId: id
-            }))
-          );
-        } catch (error) {
-          this.logger.warn(`Failed to insert cache tags, continuing anyway: ${error}`);
+      const dbAvailable = await DatabaseChecker.checkConnection();
+      
+      if (!dbAvailable) {
+        // Fallback to in-memory storage
+        this.logger.warn('Database unavailable - storing in fallback cache');
+        
+        // Simple eviction for fallback cache
+        if (this.fallbackCache.size >= config.maxCacheSize) {
+          const oldestKey = this.fallbackCache.keys().next().value;
+          this.fallbackCache.delete(oldestKey);
         }
+        
+        const entry = {
+          id,
+          prompt,
+          promptHash,
+          embedding,
+          response,
+          model: model || 'unknown',
+          tokensSaved,
+          expiresAt: expiresAt.getTime(),
+          userId,
+          hitCount: 0,
+          createdAt: new Date(),
+          lastAccessedAt: new Date(),
+          tags: tags.map(name => ({ id: Math.random(), name, cacheId: id }))
+        };
+        
+        this.fallbackCache.set(promptHash, entry);
+        this.logger.info(`Successfully stored cache entry in fallback with id: ${id.substring(0, 8)}...`);
+        return entry;
       }
 
-      const newTags = await db.select().from(cacheTags).where(eq(cacheTags.cacheId, id));
+      try {
+        // Check size and evict if needed
+        try {
+          const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(semanticCache);
+          if (count >= config.maxCacheSize) {
+            this.logger.info(`Cache size limit reached (${count}/${config.maxCacheSize}), evicting oldest entries`);
+            const limit = Math.floor(config.maxCacheSize * 0.1);
+            const toDeleteIds = await db.select({ id: semanticCache.id })
+              .from(semanticCache)
+              .orderBy(semanticCache.lastAccessedAt)
+              .limit(limit);
 
-      this.logger.info(`Successfully stored cache entry with id: ${id.substring(0, 8)}...`);
-      return { ...entry, tags: newTags };
+            if (toDeleteIds.length > 0) {
+              await db.delete(semanticCache).where(inArray(semanticCache.id, toDeleteIds.map(d => d.id)));
+              this.logger.info(`Evicted ${toDeleteIds.length} old cache entries`);
+            }
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to check/evict cache size, continuing anyway: ${error}`);
+        }
+
+        const [entry] = await db.insert(semanticCache).values({
+          id,
+          prompt,
+          promptHash,
+          embedding: embedding as any,
+          response,
+          model: model || 'unknown',
+          tokensSaved,
+          expiresAt,
+          userId
+        }).returning();
+
+        if (tags.length > 0) {
+          try {
+            await db.insert(cacheTags).values(
+              tags.map(name => ({
+                name,
+                cacheId: id
+              }))
+            );
+          } catch (error) {
+            this.logger.warn(`Failed to insert cache tags, continuing anyway: ${error}`);
+          }
+        }
+
+        const newTags = await db.select().from(cacheTags).where(eq(cacheTags.cacheId, id));
+
+        this.logger.info(`Successfully stored cache entry with id: ${id.substring(0, 8)}...`);
+        return { ...entry, tags: newTags };
+      } catch (error: any) {
+        this.logger.error('Database storage failed, falling back to in-memory cache', error);
+        DatabaseChecker.reset();
+        
+        // Fallback to in-memory storage
+        if (this.fallbackCache.size >= config.maxCacheSize) {
+          const oldestKey = this.fallbackCache.keys().next().value;
+          this.fallbackCache.delete(oldestKey);
+        }
+        
+        const entry = {
+          id,
+          prompt,
+          promptHash,
+          embedding,
+          response,
+          model: model || 'unknown',
+          tokensSaved,
+          expiresAt: expiresAt.getTime(),
+          userId,
+          hitCount: 0,
+          createdAt: new Date(),
+          lastAccessedAt: new Date(),
+          tags: tags.map(name => ({ id: Math.random(), name, cacheId: id }))
+        };
+        
+        this.fallbackCache.set(promptHash, entry);
+        this.logger.info(`Successfully stored cache entry in fallback with id: ${id.substring(0, 8)}...`);
+        return entry;
+      }
     } catch (error: any) {
-      this.logger.error('Failed to store cache entry', error);
-      throw error;
+      this.logger.error('Failed to store cache entry completely', error);
+      throw new Error(`CACHE_STORAGE_FAILED: ${error.message}`);
     }
   }
 
   async recordHit(entryId: string): Promise<void> {
-    const [updated] = await db.update(semanticCache)
-      .set({
-        hitCount: sql`${semanticCache.hitCount} + 1`,
-        lastAccessedAt: new Date()
-      })
-      .where(eq(semanticCache.id, entryId))
-      .returning();
+    const dbAvailable = await DatabaseChecker.checkConnection();
+    
+    if (!dbAvailable) {
+      this.logger.debug('Database unavailable - hit recording skipped');
+      return;
+    }
 
-    // Stats
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    // Upsert not fully standard in Drizzle across drivers, we try specific PG way or check-update
-    // Using check then insert/update for portability
-    const existingStat = await db.select().from(cacheStatistics).where(eq(cacheStatistics.date, today)).limit(1).then(r => r[0]);
+    try {
+      const [updated] = await db.update(semanticCache)
+        .set({
+          hitCount: sql`${semanticCache.hitCount} + 1`,
+          lastAccessedAt: new Date()
+        })
+        .where(eq(semanticCache.id, entryId))
+        .returning();
 
-    if (existingStat) {
-      await db.update(cacheStatistics).set({
-        totalHits: sql`${cacheStatistics.totalHits} + 1`,
-        tokensSaved: sql`${cacheStatistics.tokensSaved} + ${updated.tokensSaved || 0}`,
-        costSaved: sql`${cacheStatistics.costSaved} + ${(updated.tokensSaved || 0) * 0.00001}`
-      }).where(eq(cacheStatistics.id, existingStat.id));
-    } else {
-      await db.insert(cacheStatistics).values({
-        date: today,
-        totalHits: 1,
-        tokensSaved: updated.tokensSaved || 0,
-        costSaved: (updated.tokensSaved || 0) * 0.00001
-      });
+      // Stats
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const existingStat = await db.select().from(cacheStatistics).where(eq(cacheStatistics.date, today)).limit(1).then(r => r[0]);
+
+      if (existingStat) {
+        await db.update(cacheStatistics).set({
+          totalHits: sql`${cacheStatistics.totalHits} + 1`,
+          tokensSaved: sql`${cacheStatistics.tokensSaved} + ${updated.tokensSaved || 0}`,
+          costSaved: sql`${cacheStatistics.costSaved} + ${(updated.tokensSaved || 0) * 0.00001}`
+        }).where(eq(cacheStatistics.id, existingStat.id));
+      } else {
+        await db.insert(cacheStatistics).values({
+          date: today,
+          totalHits: 1,
+          tokensSaved: updated.tokensSaved || 0,
+          costSaved: (updated.tokensSaved || 0) * 0.00001
+        });
+      }
+    } catch (error: any) {
+      this.logger.error('Failed to record cache hit', error);
+      DatabaseChecker.reset();
     }
   }
 
   async recordMiss(): Promise<void> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const existingStat = await db.select().from(cacheStatistics).where(eq(cacheStatistics.date, today)).limit(1).then(r => r[0]);
+    const dbAvailable = await DatabaseChecker.checkConnection();
+    
+    if (!dbAvailable) {
+      this.logger.debug('Database unavailable - miss recording skipped');
+      return;
+    }
 
-    if (existingStat) {
-      await db.update(cacheStatistics).set({
-        totalMisses: sql`${cacheStatistics.totalMisses} + 1`,
-      }).where(eq(cacheStatistics.id, existingStat.id));
-    } else {
-      await db.insert(cacheStatistics).values({
-        date: today,
-        totalMisses: 1
-      });
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const existingStat = await db.select().from(cacheStatistics).where(eq(cacheStatistics.date, today)).limit(1).then(r => r[0]);
+
+      if (existingStat) {
+        await db.update(cacheStatistics).set({
+          totalMisses: sql`${cacheStatistics.totalMisses} + 1`,
+        }).where(eq(cacheStatistics.id, existingStat.id));
+      } else {
+        await db.insert(cacheStatistics).values({
+          date: today,
+          totalMisses: 1
+        });
+      }
+    } catch (error: any) {
+      this.logger.error('Failed to record cache miss', error);
+      DatabaseChecker.reset();
     }
   }
 

@@ -935,6 +935,52 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================================
+  // Large File Upload (Streaming)
+  // ============================================================
+  // معالجة رفع ملفات كبيرة بدون تحميلها بالكامل في الذاكرة
+  app.post("/api/files/upload", async (req, res) => {
+    try {
+      // نسمح فقط بـ application/octet-stream للرفع الثنائي
+      const ct = (req.headers["content-type"] || "").toString().toLowerCase();
+      if (!ct.includes("application/octet-stream")) {
+        return res.status(400).json({ error: "نوع المحتوى يجب أن يكون application/octet-stream" });
+      }
+
+      const { createWriteStream } = await import("fs");
+      const { tmpdir } = await import("os");
+      const { join } = await import("path");
+      const filename = `upload_${Date.now()}_${Math.random().toString(36).slice(2)}.bin`;
+      const tempPath = join(tmpdir(), filename);
+
+      const writeStream = createWriteStream(tempPath);
+      let bytesWritten = 0;
+
+      req.on("data", (chunk: Buffer) => {
+        bytesWritten += chunk.length;
+      });
+
+      req.pipe(writeStream);
+
+      writeStream.on("finish", () => {
+        res.status(201).json({
+          success: true,
+          path: tempPath,
+          sizeBytes: bytesWritten,
+          message: "تم رفع الملف بنجاح بطريقة streaming دون استهلاك ذاكرة كبيرة",
+        });
+      });
+
+      writeStream.on("error", (err) => {
+        console.error("File upload error:", err);
+        res.status(500).json({ error: "فشل في رفع الملف" });
+      });
+    } catch (error) {
+      console.error("File upload error:", error);
+      res.status(500).json({ error: "فشل في رفع الملف" });
+    }
+  });
+
   return httpServer;
 }
 

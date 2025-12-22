@@ -7,6 +7,10 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupWebSocket } from "./websocket";
 import { initializeCacheCleanup, shutdownCacheCleanup } from "./services/CacheCleanupScheduler";
+import { monitoringService } from "./services/MonitoringService";
+import { alertService } from "./services/AlertService";
+import { setupMonitoringMiddleware } from "./middleware/monitoring";
+import monitoringRoutes from "./routes/monitoring";
 
 const app = express();
 const httpServer = createServer(app);
@@ -100,7 +104,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// إعداد middleware المراقبة
+setupMonitoringMiddleware(app);
+
+// إضافة مسارات المراقبة
+app.use('/api/monitoring', monitoringRoutes);
+
 (async () => {
+  // بدء خدمة المراقبة
+  monitoringService.start(30000); // كل 30 ثانية
+  log("Monitoring service started", "monitoring");
+
   await registerRoutes(httpServer, app);
 
   // Setup WebSocket server
@@ -148,6 +162,10 @@ app.use((req, res, next) => {
   // Graceful shutdown handler
   const gracefulShutdown = (signal: string) => {
     log(`${signal} received, shutting down gracefully...`, "server");
+    
+    // إيقاف خدمة المراقبة
+    monitoringService.stop();
+    log("Monitoring service stopped", "monitoring");
     
     // إيقاف مُجدول التنظيف
     shutdownCacheCleanup();

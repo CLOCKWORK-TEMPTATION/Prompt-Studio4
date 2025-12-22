@@ -982,7 +982,8 @@ describe('اختبارات تكامل المكونات', () => {
 
         expect(lookup.hit).toBe(true);
         expect(lookup.similarity).toBe(1.0);
-        expect(lookup.cached?.response).toBe(response);
+        // تحقق من حقل entry المتوافق مع شكل الاستجابة الحالي
+        expect(lookup.entry?.response).toBe(response);
       } catch (error: any) {
         if (error.message?.includes('ECONNREFUSED') || error.code === 'ECONNREFUSED') {
           console.log('Skipping: Database not available');

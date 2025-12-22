@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, doublePrecision, primaryKey, unique, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, doublePrecision, primaryKey, unique, real, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -27,7 +27,11 @@ export const templates = pgTable("templates", {
     value: string;
   }>>().notNull().default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  nameIdx: index("idx_templates_name").on(table.name),
+  categoryIdx: index("idx_templates_category").on(table.category),
+  createdIdx: index("idx_templates_created_at").on(table.createdAt),
+}));
 
 export const insertTemplateSchema = createInsertSchema(templates).omit({
   id: true,
@@ -46,7 +50,10 @@ export const techniques = pgTable("techniques", {
   commonMistakes: jsonb("common_mistakes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   snippet: text("snippet"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  titleIdx: index("idx_techniques_title").on(table.title),
+  createdIdx: index("idx_techniques_created_at").on(table.createdAt),
+}));
 
 export const insertTechniqueSchema = createInsertSchema(techniques).omit({
   id: true,
@@ -69,7 +76,11 @@ export const tenants = pgTable("tenants", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  nameIdx: index("idx_tenants_name").on(table.name),
+  activeIdx: index("idx_tenants_is_active").on(table.isActive),
+  updatedIdx: index("idx_tenants_updated_at").on(table.updatedAt),
+}));
 
 // Users
 export const users = pgTable("users", {
@@ -81,7 +92,11 @@ export const users = pgTable("users", {
   tenantId: text("tenant_id").references(() => tenants.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  tenantIdx: index("idx_users_tenant_id").on(table.tenantId),
+  nameIdx: index("idx_users_name").on(table.name),
+  updatedIdx: index("idx_users_updated_at").on(table.updatedAt),
+}));
 
 // Prompts Table (Merged - Upgraded to UUID support while keeping compatibility concepts)
 // Note: We use text("id") for UUID compatibility across the new system.
@@ -94,7 +109,12 @@ export const prompts = pgTable("prompts", {
   activeVersionId: text("active_version_id"), // Circular reference handled in code or via separate update
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  tenantIdx: index("idx_prompts_tenant_id").on(table.tenantId),
+  ownerIdx: index("idx_prompts_owner_id").on(table.ownerId),
+  nameIdx: index("idx_prompts_name").on(table.name),
+  updatedIdx: index("idx_prompts_updated_at").on(table.updatedAt),
+}));
 
 // Prompt Versions (Merged)
 export const promptVersions = pgTable("prompt_versions", {
@@ -117,7 +137,11 @@ export const promptVersions = pgTable("prompt_versions", {
   // Analytics
   performanceMetrics: jsonb("performance_metrics").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  promptIdx: index("idx_prompt_versions_prompt_id").on(table.promptId),
+  versionIdx: index("idx_prompt_versions_version").on(table.version),
+  createdIdx: index("idx_prompt_versions_created_at").on(table.createdAt),
+}));
 
 // Collaboration Sessions
 export const collaborationSessions = pgTable("collaboration_sessions", {
@@ -131,7 +155,13 @@ export const collaborationSessions = pgTable("collaboration_sessions", {
   ownerId: text("owner_id").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  tenantIdx: index("idx_collab_sessions_tenant_id").on(table.tenantId),
+  ownerIdx: index("idx_collab_sessions_owner_id").on(table.ownerId),
+  activeIdx: index("idx_collab_sessions_is_active").on(table.isActive),
+  updatedIdx: index("idx_collab_sessions_updated_at").on(table.updatedAt),
+  shareTokenIdx: uniqueIndex("ux_collab_sessions_share_token").on(table.shareToken),
+}));
 
 // Session Members
 export const sessionMembers = pgTable("session_members", {
@@ -141,7 +171,10 @@ export const sessionMembers = pgTable("session_members", {
   role: text("role").default("VIEWER"), // OWNER, EDITOR, VIEWER
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
   lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  sessionIdx: index("idx_session_members_session_id").on(table.sessionId),
+  userIdx: index("idx_session_members_user_id").on(table.userId),
+}));
 
 // Edit History
 export const editHistory = pgTable("edit_history", {
@@ -152,7 +185,10 @@ export const editHistory = pgTable("edit_history", {
   contentBefore: text("content_before"),
   contentAfter: text("content_after"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  sessionIdx: index("idx_edit_history_session_id").on(table.sessionId),
+  createdIdx: index("idx_edit_history_created_at").on(table.createdAt),
+}));
 
 // Semantic Cache
 export const semanticCache = pgTable("semantic_cache", {
@@ -168,13 +204,22 @@ export const semanticCache = pgTable("semantic_cache", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastAccessedAt: timestamp("last_accessed_at").defaultNow(),
   expiresAt: timestamp("expires_at").notNull(),
-});
+}, (table) => ({
+  hashIdx: index("idx_semantic_cache_prompt_hash").on(table.promptHash),
+  expiresIdx: index("idx_semantic_cache_expires_at").on(table.expiresAt),
+  lastAccessIdx: index("idx_semantic_cache_last_accessed_at").on(table.lastAccessedAt),
+  modelIdx: index("idx_semantic_cache_model").on(table.model),
+  userIdx: index("idx_semantic_cache_user_id").on(table.userId),
+}));
 
 export const cacheTags = pgTable("cache_tags", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   cacheId: text("cache_id").references(() => semanticCache.id, { onDelete: "cascade" }).notNull(),
-});
+}, (table) => ({
+  nameIdx: index("idx_cache_tags_name").on(table.name),
+  cacheIdx: index("idx_cache_tags_cache_id").on(table.cacheId),
+}));
 
 export const cacheStatistics = pgTable("cache_statistics", {
   id: serial("id").primaryKey(),
@@ -183,7 +228,9 @@ export const cacheStatistics = pgTable("cache_statistics", {
   totalMisses: integer("total_misses").default(0).notNull(),
   tokensSaved: integer("tokens_saved").default(0).notNull(),
   costSaved: doublePrecision("cost_saved").default(0).notNull(),
-});
+}, (table) => ({
+  dateIdx: uniqueIndex("ux_cache_statistics_date").on(table.date),
+}));
 
 export const cacheConfig = pgTable("cache_config", {
   id: serial("id").primaryKey(),
@@ -208,7 +255,12 @@ export const marketplacePrompts = pgTable("marketplace_prompts", {
   status: text("status").default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  authorIdx: index("idx_marketplace_prompts_author_id").on(table.authorId),
+  categoryIdx: index("idx_marketplace_prompts_category").on(table.category),
+  statusIdx: index("idx_marketplace_prompts_status").on(table.status),
+  createdIdx: index("idx_marketplace_prompts_created_at").on(table.createdAt),
+}));
 
 // Runs (Execution History) - Updated to link to new promptVersions
 export const runs = pgTable("runs", {
@@ -232,7 +284,11 @@ export const runs = pgTable("runs", {
   latency: integer("latency"),
   tokenUsage: jsonb("token_usage"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  versionIdx: index("idx_runs_prompt_version_id").on(table.promptVersionId),
+  modelIdx: index("idx_runs_model").on(table.model),
+  createdIdx: index("idx_runs_created_at").on(table.createdAt),
+}));
 
 // Zod Schemas
 export const insertTenantSchema = createInsertSchema(tenants);
@@ -270,7 +326,10 @@ export const runRatings = pgTable("run_ratings", {
   notes: text("notes"),
   tags: jsonb("tags").$type<string[]>().default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  runIdx: index("idx_run_ratings_run_id").on(table.runId),
+  createdIdx: index("idx_run_ratings_created_at").on(table.createdAt),
+}));
 
 // Agent Compose Runs (Tri-Agent Composer)
 export const agentComposeRuns = pgTable("agent_compose_runs", {
@@ -290,7 +349,12 @@ export const agentComposeRuns = pgTable("agent_compose_runs", {
   error: text("error"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
-});
+}, (table) => ({
+  statusIdx: index("idx_agent_compose_runs_status").on(table.status),
+  stageIdx: index("idx_agent_compose_runs_stage").on(table.stage),
+  createdIdx: index("idx_agent_compose_runs_created_at").on(table.createdAt),
+  finishedIdx: index("idx_agent_compose_runs_finished_at").on(table.finishedAt),
+}));
 
 // Agent Compose Results
 export const agentComposeResults = pgTable("agent_compose_results", {
