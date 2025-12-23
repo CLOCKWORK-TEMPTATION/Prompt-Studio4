@@ -17,7 +17,9 @@ import type {
   AgentComposeRun,
   InsertAgentComposeRun,
   AgentComposeResult,
-  InsertAgentComposeResult
+  InsertAgentComposeResult,
+  Scenario,
+  InsertScenario
 } from "@shared/schema";
 import { eq, desc, like, or, sql } from "drizzle-orm";
 
@@ -64,6 +66,13 @@ export interface IStorage {
   updateAgentComposeRun(id: number, updates: Partial<InsertAgentComposeRun>): Promise<AgentComposeRun | undefined>;
   createAgentComposeResult(result: InsertAgentComposeResult): Promise<AgentComposeResult>;
   getAgentComposeResultByRunId(runId: number): Promise<AgentComposeResult | undefined>;
+
+  // Scenarios
+  getAllScenarios(): Promise<Scenario[]>;
+  getScenarioById(id: number): Promise<Scenario | undefined>;
+  createScenario(scenario: InsertScenario): Promise<Scenario>;
+  updateScenario(id: number, scenario: Partial<Scenario>): Promise<Scenario | undefined>;
+  deleteScenario(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -217,6 +226,35 @@ export class DatabaseStorage implements IStorage {
       .from(schema.agentComposeResults)
       .where(eq(schema.agentComposeResults.runId, runId));
     return result[0];
+  }
+
+  // Scenarios
+  async getAllScenarios(): Promise<Scenario[]> {
+    return db.select().from(schema.scenarios).orderBy(desc(schema.scenarios.createdAt));
+  }
+
+  async getScenarioById(id: number): Promise<Scenario | undefined> {
+    const result = await db.select().from(schema.scenarios).where(eq(schema.scenarios.id, id));
+    return result[0];
+  }
+
+  async createScenario(scenario: InsertScenario): Promise<Scenario> {
+    const result = await db.insert(schema.scenarios).values(scenario as any).returning();
+    return result[0];
+  }
+
+  async updateScenario(id: number, scenario: Partial<Scenario>): Promise<Scenario | undefined> {
+    const result = await db
+      .update(schema.scenarios)
+      .set(scenario as any)
+      .where(eq(schema.scenarios.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteScenario(id: number): Promise<boolean> {
+    const result = await db.delete(schema.scenarios).where(eq(schema.scenarios.id, id)).returning();
+    return result.length > 0;
   }
 }
 

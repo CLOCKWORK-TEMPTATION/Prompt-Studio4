@@ -9,6 +9,7 @@ import Templates from "@/pages/Templates";
 import Techniques from "@/pages/Techniques";
 import Runs from "@/pages/Runs";
 import Settings from "@/pages/Settings";
+import Scenarios from "@/pages/Scenarios";
 import Analytics from "@/pages/Analytics";
 import AdvancedEditor from "@/pages/AdvancedEditor";
 import Collaboration from "@/pages/Collaboration";
@@ -32,6 +33,7 @@ function Router() {
         <Route path="/sdk-generator" component={SDKGenerator} />
         <Route path="/cloud-deployment" component={CloudDeployment} />
         <Route path="/monitoring" component={Monitoring} />
+        <Route path="/scenarios" component={Scenarios} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

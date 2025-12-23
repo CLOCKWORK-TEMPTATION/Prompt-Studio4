@@ -402,3 +402,30 @@ export type InsertAgentComposeResult = z.infer<typeof insertAgentComposeResultSc
 export type RunRating = typeof runRatings.$inferSelect;
 export type AgentComposeRun = typeof agentComposeRuns.$inferSelect;
 export type AgentComposeResult = typeof agentComposeResults.$inferSelect;
+
+// Scenarios
+export const scenarios = pgTable("scenarios", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  content: jsonb("content").notNull(),
+  status: text("status").notNull().default("pending"), // pending, running, completed, failed
+  progress: integer("progress").notNull().default(0),
+  result: jsonb("result"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+    createdIdx: index("idx_scenarios_created_at").on(table.createdAt),
+}));
+
+export const insertScenarioSchema = createInsertSchema(scenarios).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  status: true,
+  progress: true,
+  result: true
+});
+
+export type InsertScenario = z.infer<typeof insertScenarioSchema>;
+export type Scenario = typeof scenarios.$inferSelect;
