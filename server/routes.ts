@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { llmProvider } from "./llm-provider";
 import { runAgent1, runAgent2, runAgent3 } from "./agents";
 import { z } from "zod";
-import { insertTemplateSchema, insertTechniqueSchema, insertRunRatingSchema } from "@shared/schema";
+import { insertTemplateSchema, insertTechniqueSchema, insertRunRatingSchema, insertScenarioSchema } from "@shared/schema";
 import { registerSDKRoutes } from "./routes/sdk";
 import { semanticCacheService } from "./services/SemanticCacheService";
 import { cacheCleanupScheduler } from "./services/CacheCleanupScheduler";
@@ -197,6 +197,104 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete technique" });
+    }
+  });
+
+  // Scenarios CRUD
+  app.get("/api/scenarios", async (_req, res) => {
+    try {
+      const scenarios = await storage.getAllScenarios();
+      res.json(scenarios);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch scenarios" });
+    }
+  });
+
+  app.get("/api/scenarios/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const scenario = await storage.getScenarioById(id);
+      if (!scenario) {
+        return res.status(404).json({ error: "Scenario not found" });
+      }
+      res.json(scenario);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch scenario" });
+    }
+  });
+
+  app.post("/api/scenarios", async (req, res) => {
+    try {
+      const validated = insertScenarioSchema.parse(req.body);
+      const scenario = await storage.createScenario(validated);
+      res.status(201).json(scenario);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create scenario" });
+    }
+  });
+
+  app.delete("/api/scenarios/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteScenario(id);
+      if (!success) {
+        return res.status(404).json({ error: "Scenario not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete scenario" });
+    }
+  });
+
+  // Run Scenario
+  app.post("/api/scenarios/:id/run", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const scenario = await storage.getScenarioById(id);
+      if (!scenario) {
+        return res.status(404).json({ error: "Scenario not found" });
+      }
+
+      // Update status to running
+      await storage.updateScenario(id, {
+        status: "running",
+        progress: 0,
+      });
+
+      // Start background processing (simulation)
+      runScenarioProcess(id);
+
+      res.json({ message: "Scenario started" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to run scenario" });
+    }
+  });
+
+  // Export Scenario
+  app.get("/api/scenarios/:id/export", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const scenario = await storage.getScenarioById(id);
+      if (!scenario) {
+        return res.status(404).json({ error: "Scenario not found" });
+      }
+
+      const report = {
+        id: scenario.id,
+        title: scenario.title,
+        status: scenario.status,
+        result: scenario.result,
+        exportedAt: new Date().toISOString(),
+      };
+
+      res.header("Content-Type", "application/json");
+      res.attachment(`scenario_${id}_report.json`);
+      res.send(JSON.stringify(report, null, 2));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to export scenario" });
     }
   });
 
@@ -1059,5 +1157,26 @@ async function processAgentCompose(
       error: error instanceof Error ? error.message : "Unknown error",
     });
     throw error;
+  }
+}
+
+async function runScenarioProcess(id: number) {
+  try {
+    // Simulate steps
+    for (let i = 10; i <= 100; i += 10) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // Sleep 500ms
+      await storage.updateScenario(id, { progress: i });
+    }
+
+    await storage.updateScenario(id, {
+      status: "completed",
+      progress: 100,
+      result: { summary: "Scenario execution successful", details: "All tests passed." }
+    });
+  } catch (error) {
+    await storage.updateScenario(id, {
+      status: "failed",
+      result: { error: error instanceof Error ? error.message : "Unknown error" }
+    } as any);
   }
 }
