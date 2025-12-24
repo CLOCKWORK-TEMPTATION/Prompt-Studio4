@@ -11,7 +11,7 @@ import { cacheCleanupScheduler } from "./services/CacheCleanupScheduler";
 import { SDKGenerator } from "./lib/sdk-generator/advanced-index";
 import { runtimeTester } from "./lib/sdk-generator/__tests__/runtime-tester";
 import crypto from "crypto";
-import { aiRateLimiter, authRateLimiter, uploadRateLimiter } from "./middleware/security";
+import { aiRateLimiter, authRateLimiter, uploadRateLimiter, csrfProtection } from "./middleware/security";
 
 // Helper to substitute variables in text
 function substituteVariables(
@@ -940,7 +940,7 @@ export async function registerRoutes(
   // Large File Upload (Streaming) - with upload rate limiting
   // ============================================================
   // معالجة رفع ملفات كبيرة بدون تحميلها بالكامل في الذاكرة
-  app.post("/api/files/upload", uploadRateLimiter, async (req, res) => {
+  app.post("/api/files/upload", uploadRateLimiter, csrfProtection, async (req, res) => {
     try {
       // نسمح فقط بـ application/octet-stream للرفع الثنائي
       const ct = (req.headers["content-type"] || "").toString().toLowerCase();
@@ -973,12 +973,161 @@ export async function registerRoutes(
       });
 
       writeStream.on("error", (err) => {
-        console.error("File upload error:", err);
+        const sanitizedError = String(err.message || 'Unknown error').replace(/[\r\n]/g, '');
+        console.error("File upload error:", sanitizedError);
         res.status(500).json({ error: "فشل في رفع الملف" });
       });
     } catch (error) {
-      console.error("File upload error:", error);
+      const sanitizedError = error instanceof Error ? error.message.replace(/[\r\n]/g, '') : 'Unknown';
+      console.error("File upload error:", sanitizedError);
       res.status(500).json({ error: "فشل في رفع الملف" });
+    }
+  });
+
+  // ============================================================
+  // Settings & Models API
+  // ============================================================
+
+  // Get available models
+  app.get("/api/settings/models", async (_req, res) => {
+    try {
+      const models = [
+        // Groq models
+        { id: "meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick 17B (Groq)", provider: "groq" },
+        { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B Versatile (Groq)", provider: "groq" },
+        { id: "llama-3.1-70b-versatile", name: "Llama 3.1 70B Versatile (Groq)", provider: "groq" },
+        { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B Instant (Groq)", provider: "groq" },
+        { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B (Groq)", provider: "groq" },
+        { id: "gemma2-9b-it", name: "Gemma 2 9B (Groq)", provider: "groq" },
+        
+        // OpenAI models
+        { id: "gpt-4o", name: "GPT-4o (OpenAI)", provider: "openai" },
+        { id: "gpt-4o-mini", name: "GPT-4o Mini (OpenAI)", provider: "openai" },
+        { id: "gpt-4-turbo", name: "GPT-4 Turbo (OpenAI)", provider: "openai" },
+        { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo (OpenAI)", provider: "openai" },
+        
+        // Anthropic models
+        { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet (Anthropic)", provider: "anthropic" },
+        { id: "claude-3-opus-20240229", name: "Claude 3 Opus (Anthropic)", provider: "anthropic" },
+        { id: "claude-3-sonnet-20240229", name: "Claude 3 Sonnet (Anthropic)", provider: "anthropic" },
+        
+        // Google models
+        { id: "models/gemini-2.0-flash-exp", name: "Gemini 2.0 Flash (Google)", provider: "google" },
+        { id: "models/gemini-1.5-pro", name: "Gemini 1.5 Pro (Google)", provider: "google" },
+      ];
+      
+      res.json(models);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch models" });
+    }
+  });
+
+  // Get settings
+  app.get("/api/settings", async (req, res) => {
+    try {
+      const settings = {
+        llm: {
+          baseUrl: req.session.baseUrl || "https://api.groq.com/openai/v1",
+          model: req.session.defaultModel || "meta-llama/llama-4-maverick-17b-128e-instruct",
+          hasApiKey: !!req.session.apiKey,
+        },
+        ui: {
+          darkMode: req.session.darkMode !== false, // default to true
+          rtlMode: req.session.rtlMode !== false,   // default to true
+        }
+      };
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  // Save settings
+  app.post("/api/settings", async (req, res) => {
+    try {
+      const { llm, ui } = req.body;
+      
+      if (llm) {
+        if (llm.baseUrl) req.session.baseUrl = llm.baseUrl;
+        if (llm.model) req.session.defaultModel = llm.model;
+        if (llm.apiKey) req.session.apiKey = llm.apiKey;
+      }
+      
+      if (ui) {
+        if (typeof ui.darkMode === 'boolean') req.session.darkMode = ui.darkMode;
+        if (typeof ui.rtlMode === 'boolean') req.session.rtlMode = ui.rtlMode;
+      }
+      
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      
+      res.json({ success: true, message: "تم حفظ الإعدادات بنجاح" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save settings" });
+    }
+  });
+
+  // ============================================================
+  // Prompt Enhancement API - تحسين الـ prompts ذكياً
+  // ============================================================
+
+  // تحسين الـ prompt باستخدام الـ AI
+  app.post("/api/prompts/enhance", async (req, res) => {
+    try {
+      const { idea, customInstructions } = req.body;
+      
+      if (!idea || typeof idea !== 'string' || idea.trim().length === 0) {
+        return res.status(400).json({ error: "يجب توفير فكرة أو موجه" });
+      }
+
+      const enhancementPrompt = `أنت خبير هندسة الموجهات (Prompt Engineering). مهمتك تحويل الفكرة البسيطة التالية إلى موجه احترافي وشامل:
+
+الفكرة الأصلية: "${idea.trim()}"
+
+${customInstructions ? `تعليمات إضافية: "${customInstructions}"` : ""}
+
+قم بـ:
+1. إضافة دور واضح للـ AI
+2. تفصيل المهمة بشكل دقيق
+3. إضافة السياق والقيود المهمة
+4. تحديد صيغة المخرجات المطلوبة
+5. إضافة أمثلة إن لزم الأمر
+
+قدم الموجه المحسّن فقط، بدون شرح إضافي.`;
+
+      const response = await llmProvider.complete(
+        {
+          model: req.session.defaultModel || "meta-llama/llama-4-maverick-17b-128e-instruct",
+          messages: [
+            {
+              role: "system",
+              content: "أنت خبير في هندسة الموجهات. تحويل الأفكار البسيطة إلى موجهات احترافية."
+            },
+            {
+              role: "user",
+              content: enhancementPrompt
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 1500
+        },
+        req.session.apiKey
+      );
+
+      res.json({
+        enhanced: response.output,
+        latency: response.latency,
+        tokenUsage: response.tokenUsage
+      });
+    } catch (error) {
+      console.error("Prompt enhancement error:", error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "فشل تحسين الموجه"
+      });
     }
   });
 

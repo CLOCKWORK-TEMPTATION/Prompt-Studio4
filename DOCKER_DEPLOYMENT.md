@@ -309,3 +309,4 @@ kubectl create -f docker-compose-resolved.yml
 - حدث الصور والتبعيات بانتظام لسد الثغرات الأمنية
 - استخدم secrets management في الإنتاج بدلاً من متغيرات البيئة
 
+

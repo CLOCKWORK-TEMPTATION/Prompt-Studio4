@@ -108,7 +108,9 @@ export class AlertService extends EventEmitter {
    * معالجة التنبيه
    */
   private async handleAlert(alert: any): Promise<void> {
-    console.log(`[AlertService] معالجة تنبيه: ${alert.severity} - ${alert.message}`);
+    const sanitizedSeverity = String(alert.severity || 'unknown').replace(/[\r\n]/g, '');
+    const sanitizedMessage = String(alert.message || '').replace(/[\r\n]/g, '');
+    console.log(`[AlertService] معالجة تنبيه: ${sanitizedSeverity} - ${sanitizedMessage}`);
 
     // تحديد القنوات المناسبة حسب شدة التنبيه
     const targetChannels = this.getChannelsForSeverity(alert.severity);
@@ -334,9 +336,9 @@ export class AlertService extends EventEmitter {
       notification.status = 'sent';
       notification.sentAt = Date.now();
       
-      console.log(`[AlertService] نجحت إعادة المحاولة لإرسال التنبيه عبر ${channel.name}`);
+      console.log(`[AlertService] نجحت إعادة المحاولة لإرسال التنبيه عبر ${String(channel.name).replace(/[\r\n]/g, '')}`);
     } catch (error) {
-      console.error(`[AlertService] فشلت إعادة المحاولة ${notification.retryCount} لإرسال التنبيه عبر ${channel.name}:`, error);
+      console.error(`[AlertService] فشلت إعادة المحاولة ${notification.retryCount} لإرسال التنبيه عبر ${String(channel.name).replace(/[\r\n]/g, '')}:`, error);
       notification.status = 'failed';
       notification.error = error instanceof Error ? error.message : String(error);
       
@@ -346,7 +348,7 @@ export class AlertService extends EventEmitter {
           this.retryNotification(notification, alert, channel);
         }, this.retryDelay * (notification.retryCount + 1));
       } else {
-        console.error(`[AlertService] فشل نهائي في إرسال التنبيه عبر ${channel.name} بعد ${this.maxRetries} محاولات`);
+        console.error(`[AlertService] فشل نهائي في إرسال التنبيه عبر ${String(channel.name).replace(/[\r\n]/g, '')} بعد ${this.maxRetries} محاولات`);
       }
     }
   }
@@ -357,7 +359,7 @@ export class AlertService extends EventEmitter {
   addChannel(channel: Omit<AlertChannel, 'id'>): string {
     const id = `channel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     this.channels.push({ ...channel, id });
-    console.log(`[AlertService] تم إضافة قناة جديدة: ${channel.name}`);
+    console.log(`[AlertService] تم إضافة قناة جديدة: ${String(channel.name).replace(/[\r\n]/g, '')}`);
     return id;
   }
 
@@ -368,7 +370,7 @@ export class AlertService extends EventEmitter {
     const channel = this.channels.find(c => c.id === channelId);
     if (channel) {
       Object.assign(channel, updates);
-      console.log(`[AlertService] تم تحديث القناة: ${channel.name}`);
+      console.log(`[AlertService] تم تحديث القناة: ${String(channel.name).replace(/[\r\n]/g, '')}`);
       return true;
     }
     return false;
@@ -382,7 +384,7 @@ export class AlertService extends EventEmitter {
     if (index !== -1) {
       const channel = this.channels[index];
       this.channels.splice(index, 1);
-      console.log(`[AlertService] تم حذف القناة: ${channel.name}`);
+      console.log(`[AlertService] تم حذف القناة: ${String(channel.name).replace(/[\r\n]/g, '')}`);
       return true;
     }
     return false;
@@ -471,10 +473,10 @@ export class AlertService extends EventEmitter {
       };
 
       await this.sendNotification(testAlert, channel, testNotification);
-      console.log(`[AlertService] نجح اختبار القناة: ${channel.name}`);
+      console.log(`[AlertService] نجح اختبار القناة: ${String(channel.name).replace(/[\r\n]/g, '')}`);
       return true;
     } catch (error) {
-      console.error(`[AlertService] فشل اختبار القناة ${channel.name}:`, error);
+      console.error(`[AlertService] فشل اختبار القناة ${String(channel.name).replace(/[\r\n]/g, '')}:`, error);
       return false;
     }
   }

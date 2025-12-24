@@ -48,7 +48,41 @@ app.use(express.urlencoded({ extended: false }));
 const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000,http://localhost:3001,http://localhost:5000")
   .split(",")
   .map((s) => s.trim())
-  .filter(Boolean);
+  .filter(Boolean)
+  .filter((origin) => {
+    // Validate origin format to prevent SSRF
+    try {
+      const url = new URL(origin);
+      // Only allow http/https protocols
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        return false;
+      }
+      // Always block private IP ranges and localhost (CWE-918)
+      const hostname = url.hostname.toLowerCase();
+      const privatePatterns = [
+        /^localhost$/,
+        /^127\.\d+\.\d+\.\d+$/,
+        /^0\.0\.0\.0$/,
+        /^::1$/,
+        /^::$/,
+        /^192\.168\.\d+\.\d+$/,
+        /^10\.\d+\.\d+\.\d+$/,
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/,
+        /^169\.254\.\d+\.\d+$/,
+        /^\[::1\]$/,
+        /^\[::1\]:\d+$/
+      ];
+      
+      for (const pattern of privatePatterns) {
+        if (pattern.test(hostname)) {
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
 app.use(
   cors({
@@ -138,7 +172,9 @@ app.use((req, res, next) => {
   // تطبيق حماية CSRF على جميع مسارات API (ما عدا GET)
   app.use('/api', csrfProtection);
 
+  log("Registering routes...", "server");
   await registerRoutes(httpServer, app);
+  log("Routes registered successfully", "server");
 
   // إعداد middleware المراقبة
   setupMonitoringMiddleware(app);
@@ -165,11 +201,14 @@ app.use((req, res, next) => {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
+  log("Setting up static serving...", "server");
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
+    log("Static files setup complete", "server");
   } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+    // في development mode، الـ Vite يشتغل standalone على port 3000
+    // ويعمل proxy للـ backend على port 3001
+    log("Development mode: Vite runs standalone", "server");
   }
 
   // ALWAYS serve the app on port 3001 for development, 5000 for production

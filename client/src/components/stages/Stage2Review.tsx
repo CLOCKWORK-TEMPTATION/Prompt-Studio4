@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { CheckCircle2 } from "lucide-react";
 import { AgentComposeStatus } from "@/lib/types";
+import { CopyButton } from "@/components/CopyButton";
 
 interface Stage2ReviewProps {
   status: AgentComposeStatus | null;
@@ -72,11 +73,23 @@ export function Stage2Review({ status, onApprove }: Stage2ReviewProps) {
               الوكيل 3: النسخة النهائية ⭐
             </AccordionTrigger>
             <AccordionContent>
-              <div className="space-y-2 text-sm bg-primary/5 p-4 rounded-lg">
-                <div><strong>System:</strong> {agent3.finalPrompt.system}</div>
-                <div><strong>Developer:</strong> {agent3.finalPrompt.developer}</div>
-                <div><strong>User:</strong> {agent3.finalPrompt.user}</div>
-                <div><strong>Context:</strong> {agent3.finalPrompt.context || "لا يوجد"}</div>
+              <div className="space-y-3 text-sm bg-primary/5 p-4 rounded-lg">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1"><strong>System:</strong> {agent3.finalPrompt.system}</div>
+                  <CopyButton text={agent3.finalPrompt.system} size="icon" variant="ghost" />
+                </div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1"><strong>Developer:</strong> {agent3.finalPrompt.developer}</div>
+                  <CopyButton text={agent3.finalPrompt.developer} size="icon" variant="ghost" />
+                </div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1"><strong>User:</strong> {agent3.finalPrompt.user}</div>
+                  <CopyButton text={agent3.finalPrompt.user} size="icon" variant="ghost" />
+                </div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1"><strong>Context:</strong> {agent3.finalPrompt.context || "لا يوجد"}</div>
+                  {agent3.finalPrompt.context && <CopyButton text={agent3.finalPrompt.context} size="icon" variant="ghost" />}
+                </div>
                 {agent3.finalVariables.length > 0 && (
                   <div><strong>المتغيرات:</strong> {agent3.finalVariables.map(v => v.name).join(", ")}</div>
                 )}

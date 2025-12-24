@@ -193,7 +193,8 @@ export function setupWebSocket(httpServer: HTTPServer): SocketIOServer {
       if (clientSet.size === 0) {
         rooms.delete(roomId);
         roomClients.delete(roomId);
-        console.log(`Cleaned up stale room: ${roomId}`);
+        const sanitizedRoomId = String(roomId).replace(/[\r\n]/g, '');
+        console.log(`Cleaned up stale room: ${sanitizedRoomId}`);
       }
     });
   }, 5 * 60 * 1000);

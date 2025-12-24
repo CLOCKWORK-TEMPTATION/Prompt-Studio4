@@ -10,11 +10,8 @@ import Techniques from "@/pages/Techniques";
 import Runs from "@/pages/Runs";
 import Settings from "@/pages/Settings";
 import Analytics from "@/pages/Analytics";
-import AdvancedEditor from "@/pages/AdvancedEditor";
-import Collaboration from "@/pages/Collaboration";
-import SDKGenerator from "@/pages/SDKGenerator";
-import CloudDeployment from "@/pages/CloudDeployment";
 import Monitoring from "@/pages/Monitoring";
+import Learn from "@/pages/Learn";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -23,15 +20,12 @@ function Router() {
       <Switch>
         <Route path="/" component={() => <Redirect to="/studio" />} />
         <Route path="/studio" component={Studio} />
-        <Route path="/advanced-editor" component={AdvancedEditor} />
-        <Route path="/collaboration" component={Collaboration} />
         <Route path="/templates" component={Templates} />
         <Route path="/techniques" component={Techniques} />
         <Route path="/runs" component={Runs} />
         <Route path="/analytics" component={Analytics} />
-        <Route path="/sdk-generator" component={SDKGenerator} />
-        <Route path="/cloud-deployment" component={CloudDeployment} />
         <Route path="/monitoring" component={Monitoring} />
+        <Route path="/learn" component={Learn} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>

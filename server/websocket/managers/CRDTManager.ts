@@ -121,9 +121,11 @@ export class CRDTManager {
             // Clear pending updates after successful persist
             state.pendingUpdates = [];
 
-            console.log(`📦 Persisted CRDT document for session ${sessionId}`);
+            const sanitizedSessionId = String(sessionId).replace(/[\r\n]/g, '');
+            console.log(`📦 Persisted CRDT document for session ${sanitizedSessionId}`);
         } catch (error) {
-            console.error(`Error persisting CRDT document for session ${sessionId}:`, error);
+            const sanitizedSessionId = String(sessionId).replace(/[\r\n]/g, '');
+            console.error(`Error persisting CRDT document for session ${sanitizedSessionId}:`, error);
         }
     }
 

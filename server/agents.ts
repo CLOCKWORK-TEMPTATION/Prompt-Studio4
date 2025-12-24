@@ -230,7 +230,8 @@ function parseAgentOutput<T>(output: string): T {
     const jsonText = jsonMatch[1] || trimmed;
     return JSON.parse(jsonText);
   } catch (error) {
-    console.error("Failed to parse agent output:", output);
+    const sanitizedOutput = String(output).replace(/[\r\n]/g, ' ').substring(0, 100);
+    console.error("Failed to parse agent output:", sanitizedOutput);
     throw new Error(`فشل تحليل مخرجات الوكيل: ${error instanceof Error ? error.message : "خطأ غير معروف"}`);
   }
 }

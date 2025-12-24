@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { aiApi, agentComposeApi } from "@/lib/api";
+import { aiApi, agentComposeApi, templatesApi } from "@/lib/api";
 import { PromptSections, Variable, CritiqueResult, AgentComposeStatus } from "@/lib/types";
 import { WorkflowStepper } from "@/components/WorkflowStepper";
 import { StageHeader } from "@/components/StageHeader";
@@ -14,9 +14,9 @@ import { Stage4Quality } from "@/components/stages/Stage4Quality";
 import { Stage5Run } from "@/components/stages/Stage5Run";
 import { Stage6Organize } from "@/components/stages/Stage6Organize";
 import { WorkflowMapDialog } from "@/components/WorkflowMapDialog";
+import { decodePromptFromUrl } from "@/lib/share";
 import {
   StageId,
-  StageStatus,
   WorkflowState,
   getInitialWorkflowState,
   canNavigateToStage,
@@ -81,6 +81,22 @@ export default function StudioNew() {
   const [settings, setSettings] = useState({ model: "meta-llama/llama-4-maverick-17b-128e-instruct", temperature: 0.7, maxTokens: 1000 });
 
   const { toast } = useToast();
+
+  // Load prompt from URL on mount
+  useEffect(() => {
+    const sharedPrompt = decodePromptFromUrl();
+    if (sharedPrompt) {
+      setRawIdea(sharedPrompt.rawIdea);
+      setGoal(sharedPrompt.goal);
+      setConstraints(sharedPrompt.constraints);
+      setOutputFormat(sharedPrompt.outputFormat);
+      
+      toast({
+        title: "تم تحميل الموجهة",
+        description: "تم تحميل الموجهة من الرابط المشترك"
+      });
+    }
+  }, []);
 
   // Auto-update stage statuses based on state
   useEffect(() => {
@@ -294,6 +310,32 @@ export default function StudioNew() {
     }
   };
 
+  // Stage 5 helpers
+  const handleSkipToOrganize = () => {
+    setWorkflowState((prev) => ({ ...prev, currentStage: 6 }));
+    toast({ title: "تم التخطي", description: "الانتقال إلى مرحلة الحفظ والتنظيم" });
+  };
+
+  // Stage 6 helpers
+  const handleStartNew = () => {
+    // Reset all state to initial values
+    setRawIdea("");
+    setGoal("");
+    setConstraints("");
+    setOutputFormat("");
+    setComposeStatus(null);
+    setSections(DEFAULT_SECTIONS);
+    setVariables([]);
+    setCommittedSections(null);
+    setCommittedVariables(null);
+    setCritique(null);
+    setOutput("");
+    setLatency(null);
+    setTokenUsage(null);
+    setWorkflowState(getInitialWorkflowState());
+    toast({ title: "بدء جديد", description: "تم إعادة تعيين جميع المراحل" });
+  };
+
   // Stage 5 handlers
   const handleRun = async () => {
     setIsRunning(true);
@@ -317,9 +359,30 @@ export default function StudioNew() {
   };
 
   // Stage 6 handlers
-  const handleSaveTemplate = () => {
-    toast({ title: "قريباً", description: "ميزة حفظ القوالب قيد التطوير" });
-    setWorkflowState((prev) => ({ ...prev, hasSaved: true }));
+  const handleSaveTemplate = async () => {
+    try {
+      const templateData = {
+        name: `مطالبة - ${new Date().toLocaleDateString('ar-EG')}`,
+        description: rawIdea || "مطالبة من الاستوديو",
+        sections: sections, // Object, not string
+        defaultVariables: variables, // Array of Variable objects
+        category: "general",
+        tags: [],
+      };
+      
+      await templatesApi.create(templateData);
+      toast({ 
+        title: "تم الحفظ بنجاح", 
+        description: "تم حفظ المطالبة في مكتبة القوالب" 
+      });
+      setWorkflowState((prev) => ({ ...prev, hasSaved: true }));
+    } catch (error) {
+      toast({ 
+        title: "فشل الحفظ", 
+        description: error instanceof Error ? error.message : "حدث خطأ أثناء الحفظ",
+        variant: "destructive" 
+      });
+    }
   };
 
   const handleExportJSON = () => {
@@ -385,20 +448,30 @@ export default function StudioNew() {
             isCritiquing={isCritiquing}
             onRunCritique={handleRunCritique}
             onApplyRewrite={handleApplyRewrite}
+            onProceedToRun={handleNextStage}
           />
         );
       case 5:
         return (
           <Stage5Run
+            sections={sections}
+            variables={variables}
             output={output}
             latency={latency}
             tokenUsage={tokenUsage}
             isRunning={isRunning}
             onRun={handleRun}
+            onSkipToOrganize={handleSkipToOrganize}
           />
         );
       case 6:
-        return <Stage6Organize onSaveTemplate={handleSaveTemplate} onExportJSON={handleExportJSON} />;
+        return (
+          <Stage6Organize
+            onSaveTemplate={handleSaveTemplate}
+            onExportJSON={handleExportJSON}
+            onStartNew={handleStartNew}
+          />
+        );
       default:
         return null;
     }

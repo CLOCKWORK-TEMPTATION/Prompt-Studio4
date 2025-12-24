@@ -1,15 +1,19 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Wand2, CheckCircle2, AlertCircle, Info } from "lucide-react";
-import { CritiqueResult } from "@/lib/types";
+import { Wand2, CheckCircle2, AlertCircle, Info, ArrowRight, Copy, Check } from "lucide-react";
+import { CritiqueResult, PromptSections } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+import { CopyButton } from "@/components/CopyButton";
+import { useToast } from "@/hooks/use-toast";
 
 interface Stage4QualityProps {
   critique: CritiqueResult | null;
   isCritiquing: boolean;
   onRunCritique: () => void;
   onApplyRewrite: () => void;
+  onProceedToRun?: () => void;
 }
 
 export function Stage4Quality({
@@ -17,13 +21,36 @@ export function Stage4Quality({
   isCritiquing,
   onRunCritique,
   onApplyRewrite,
+  onProceedToRun,
 }: Stage4QualityProps) {
+  const [showRewrittenPrompt, setShowRewrittenPrompt] = useState(false);
+  const [rewrittenSections, setRewrittenSections] = useState<PromptSections | null>(null);
+  const [copiedItem, setCopiedItem] = useState<string | null>(null);
+  const { toast } = useToast();
+
   const getSeverityIcon = (severity: string) => {
     switch (severity) {
       case "error": return <AlertCircle className="size-4 text-red-500" />;
       case "warning": return <AlertCircle className="size-4 text-yellow-500" />;
       default: return <Info className="size-4 text-blue-500" />;
     }
+  };
+
+  const handleApplyRewrite = () => {
+    if (critique?.rewrittenPrompt) {
+      try {
+        const parsed = JSON.parse(critique.rewrittenPrompt);
+        setRewrittenSections(parsed);
+        setShowRewrittenPrompt(true);
+        toast({ 
+          title: "تم تطبيق التحسينات",
+          description: "تم تطبيق النسخة المحسّنة من التحليل ✅" 
+        });
+      } catch {
+        // If parsing fails, just call the original handler
+      }
+    }
+    onApplyRewrite();
   };
 
   return (
@@ -68,14 +95,15 @@ export function Stage4Quality({
 
               {critique.issues.length > 0 && (
                 <div className="space-y-3">
-                  <h4 className="font-semibold">المشاكل المكتشفة:</h4>
-                  {critique.issues.map((issue, i) => (
-                    <div key={i} className="flex gap-3 p-3 border rounded-lg bg-card" data-testid={`issue-${i}`}>
+                  <h4 className="font-semibold mb-2">المشاكل المكتشفة:</h4>
+                  {critique.issues.map((issue, index) => (
+                    <div key={index} className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg">
                       {getSeverityIcon(issue.severity)}
                       <div className="flex-1">
-                        <p className="text-sm">{issue.message}</p>
+                        <p className="text-sm font-medium">{issue.type}</p>
+                        <p className="text-sm text-muted-foreground">{issue.description}</p>
                         {issue.suggestion && (
-                          <p className="text-xs text-muted-foreground mt-1">اقتراح: {issue.suggestion}</p>
+                          <p className="text-sm text-green-600 mt-1">💡 {issue.suggestion}</p>
                         )}
                       </div>
                     </div>
@@ -83,9 +111,9 @@ export function Stage4Quality({
                 </div>
               )}
 
-              {critique.rewrittenPrompt && (
+              {critique.rewrittenPrompt && !showRewrittenPrompt && (
                 <Button
-                  onClick={onApplyRewrite}
+                  onClick={handleApplyRewrite}
                   className="w-full"
                   variant="secondary"
                   data-testid="button-apply-rewrite"
@@ -94,6 +122,68 @@ export function Stage4Quality({
                   تطبيق النسخة المحسنة
                 </Button>
               )}
+
+              {showRewrittenPrompt && rewrittenSections && (
+                <div className="mt-6 space-y-4 border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-green-600 flex items-center gap-2">
+                      <CheckCircle2 className="size-5" />
+                      البرومبت المحسّن (تم التطبيق)
+                    </h4>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="p-3 bg-muted/30 rounded-lg">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h5 className="text-sm font-semibold">System:</h5>
+                        <CopyButton text={rewrittenSections.system} size="icon" variant="ghost" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">{rewrittenSections.system}</p>
+                    </div>
+                    
+                    <div className="p-3 bg-muted/30 rounded-lg">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h5 className="text-sm font-semibold">Developer:</h5>
+                        <CopyButton text={rewrittenSections.developer} size="icon" variant="ghost" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">{rewrittenSections.developer}</p>
+                    </div>
+                    
+                    <div className="p-3 bg-muted/30 rounded-lg">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h5 className="text-sm font-semibold">User:</h5>
+                        <CopyButton text={rewrittenSections.user} size="icon" variant="ghost" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">{rewrittenSections.user}</p>
+                    </div>
+                    
+                    {rewrittenSections.context && (
+                      <div className="p-3 bg-muted/30 rounded-lg">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <h5 className="text-sm font-semibold">Context:</h5>
+                          <CopyButton text={rewrittenSections.context} size="icon" variant="ghost" />
+                        </div>
+                        <p className="text-sm text-muted-foreground">{rewrittenSections.context}</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {onProceedToRun && (
+                    <Button
+                      onClick={onProceedToRun}
+                      className="w-full bg-green-600 hover:bg-green-700"
+                      size="lg"
+                      data-testid="button-proceed-to-run"
+                    >
+                      <CheckCircle2 className="ml-2 size-5" />
+                      موافقة والانتقال للمرحلة الخامسة (التشغيل)
+                      <ArrowRight className="mr-2 size-5" />
+                    </Button>
+                  )}
+                </div>
+              )}
+
+
             </div>
           </ScrollArea>
         )}

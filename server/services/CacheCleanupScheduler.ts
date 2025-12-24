@@ -43,7 +43,8 @@ class CacheCleanupScheduler {
 
     const intervalMs = this.config.intervalMinutes * 60 * 1000;
 
-    console.log(`[CacheCleanup] Starting scheduler with interval: ${this.config.intervalMinutes} minutes`);
+    const sanitizedInterval = String(this.config.intervalMinutes).replace(/[\r\n]/g, '');
+    console.log(`[CacheCleanup] Starting scheduler with interval: ${sanitizedInterval} minutes`);
 
     // تشغيل التنظيف فوراً عند البدء
     this.runCleanup().catch(error => {

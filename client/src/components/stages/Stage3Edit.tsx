@@ -4,9 +4,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Trash2, Check, RotateCcw } from "lucide-react";
+import { Plus, Trash2, Check, RotateCcw, Copy } from "lucide-react";
 import { PromptSections, Variable } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
+import { CopyButton } from "@/components/CopyButton";
 
 interface Stage3EditProps {
   sections: PromptSections;
@@ -35,6 +36,7 @@ export function Stage3Edit({
 }: Stage3EditProps) {
   const { toast } = useToast();
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   useEffect(() => {
     if (!committedSections) {
@@ -78,6 +80,17 @@ export function Stage3Edit({
       text = text.replace(new RegExp(`{{${v.name}}}`, 'g'), v.value || `{{${v.name}}}`);
     });
     return text;
+  };
+
+  const handleCopyField = async (field: keyof PromptSections, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedField(field);
+      toast({ title: "تم النسخ" });
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (error) {
+      toast({ title: "فشل النسخ", variant: "destructive" });
+    }
   };
 
   return (
@@ -125,6 +138,27 @@ export function Stage3Edit({
 
           {(['system', 'developer', 'user', 'context'] as const).map(section => (
             <TabsContent key={section} value={section} className="space-y-2">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <label className="text-sm font-medium">{section}</label>
+                <Button
+                  onClick={() => handleCopyField(section, sections[section])}
+                  variant="ghost"
+                  size="sm"
+                  className="h-6"
+                >
+                  {copiedField === section ? (
+                    <>
+                      <Check className="w-3 h-3 text-green-600" />
+                      <span className="text-xs text-green-600 ml-1">تم</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span className="text-xs ml-1">نسخ</span>
+                    </>
+                  )}
+                </Button>
+              </div>
               <Textarea
                 className="min-h-[300px] font-mono text-sm"
                 placeholder={`اكتب تعليمات الـ ${section} هنا...`}
@@ -181,6 +215,9 @@ export function Stage3Edit({
           </TabsContent>
 
           <TabsContent value="preview">
+            <div className="flex justify-end mb-2">
+              <CopyButton text={getPreview()} label="نسخ المعاينة" />
+            </div>
             <div className="bg-muted/50 p-4 rounded-lg border min-h-[300px]">
               <pre className="whitespace-pre-wrap text-sm font-mono" data-testid="preview-text">
                 {getPreview()}

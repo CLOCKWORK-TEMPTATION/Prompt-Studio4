@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { db } from "./storage";
 import { templates, techniques } from "@shared/schema";
 
@@ -98,20 +99,164 @@ const SEED_TEMPLATES = [
     ]
   },
   {
-    name: "كاتب إيميلات رسمية",
-    description: "صياغة إيميلات احترافية للعمل.",
-    category: "Business",
-    tags: ["Email", "Communication"],
+    name: "كاتب المقالات التقنية",
+    description: "كتابة مقالات طويلة متخصصة في المواضيع التقنية.",
+    category: "Content",
+    tags: ["Blog", "Technical", "SEO"],
     sections: {
-      system: "أنت مساعد إداري محترف.",
-      developer: "الأسلوب يجب أن يكون مهذباً، مختصراً، ومباشراً.",
-      user: "اكتب إيميلاً إلى {{recipient}} بخصوص {{subject}}.\nالنقاط الرئيسية:\n{{points}}",
+      system: "أنت كاتب محتوى تقني متخصص بخبرة 10 سنوات.",
+      developer: "استخدم عناوين واضحة، أمثلة عملية، وشرح مفاهيم معقدة بطريقة بسيطة.",
+      user: "اكتب مقالة عن {{topic}} موجهة لـ {{audience}}. الطول: {{word_count}} كلمة. النبرة: {{tone}}.",
+      context: "اجعل المقالة غنية بالمعلومات والأمثلة الحقيقية."
+    },
+    defaultVariables: [
+      { id: "v1", name: "topic", value: "مقدمة إلى Machine Learning" },
+      { id: "v2", name: "audience", value: "مبتدئين" },
+      { id: "v3", name: "word_count", value: "2000" },
+      { id: "v4", name: "tone", value: "تعليمي وودود" }
+    ]
+  },
+  {
+    name: "مولد أفكار الأعمال",
+    description: "توليد أفكار نشاط تجاري مبتكرة وقابلة للتنفيذ.",
+    category: "Business",
+    tags: ["Startup", "Ideas", "Innovation"],
+    sections: {
+      system: "أنت مستشار ريادة أعمال متخصص في تطوير الأفكار المبتكرة.",
+      developer: "قدم أفكار عملية وقابلة للتنفيذ مع نموذج العمل الأساسي.",
+      user: "أنشئ {{count}} أفكار مشاريع في المجال: {{industry}}. للسوق {{market}}.",
+      context: "اشمل: الفكرة الأساسية، المشكلة التي تحلها، نموذج الربح المتوقع."
+    },
+    defaultVariables: [
+      { id: "v1", name: "count", value: "5" },
+      { id: "v2", name: "industry", value: "التقنية الحضراء" },
+      { id: "v3", name: "market", value: "السعودية" }
+    ]
+  },
+  {
+    name: "محسّن الإيميلات",
+    description: "تحسين وتحرير رسائل البريد الإلكتروني.",
+    category: "Communication",
+    tags: ["Email", "Professional", "Copy"],
+    sections: {
+      system: "أنت خبير في الاتصالات التجارية والكتابة الاحترافية.",
+      developer: "حسّن من حيث الوضوح والتأثير والاحترافية. احتفظ بالرسالة الأساسية.",
+      user: "حسّن هذا الإيميل:\n\n{{email}}\n\nالهدف: {{goal}}",
       context: ""
     },
     defaultVariables: [
-      { id: "v1", name: "recipient", value: "المدير العام" },
-      { id: "v2", name: "subject", value: "طلب إجازة" },
-      { id: "v3", name: "points", value: "- إجازة لمدة أسبوع\n- السبب ظروف عائلية\n- تم تسليم المهام لزميلي" }
+      { id: "v1", name: "email", value: "مرحبا، أحتاج مساعدتك في المشروع" },
+      { id: "v2", name: "goal", value: "طلب رسمي للمساعدة" }
+    ]
+  },
+  {
+    name: "مولد الحملات التسويقية",
+    description: "إنشاء خطة حملة تسويقية متكاملة متعددة القنوات.",
+    category: "Marketing",
+    tags: ["Campaign", "Strategy", "Marketing"],
+    sections: {
+      system: "أنت مدير حملات تسويقية بخبرة عشر سنوات.",
+      developer: "قدم استراتيجية متكاملة مع KPIs وجدول زمني واضح.",
+      user: "صمّم حملة تسويقية لـ: {{product}}. الميزانية: {{budget}}. المدة: {{duration}}.",
+      context: "الجمهور المستهدف: {{audience}}. الأهداف: {{goals}}"
+    },
+    defaultVariables: [
+      { id: "v1", name: "product", value: "تطبيق جوال للتعليم" },
+      { id: "v2", name: "budget", value: "100,000 ريال" },
+      { id: "v3", name: "duration", value: "3 أشهر" },
+      { id: "v4", name: "audience", value: "الطلاب الجامعيين 18-25" },
+      { id: "v5", name: "goals", value: "زيادة التحميلات بـ 50%" }
+    ]
+  },
+  {
+    name: "مولد محتوى السوشيال ميديا",
+    description: "إنشاء محتوى متنوع لمنصات التواصل الاجتماعي المختلفة.",
+    category: "Content",
+    tags: ["Social", "Instagram", "TikTok"],
+    sections: {
+      system: "أنت خبير في إنشاء محتوى فيروسي للسوشيال ميديا.",
+      developer: "اجعل المحتوى جذاباً وقابلاً للمشاركة. استخدم Hashtags مناسبة.",
+      user: "أنشئ {{count}} منشورات عن {{topic}} للمنصة {{platform}}.",
+      context: "النبرة: {{tone}}. الجمهور: {{audience}}"
+    },
+    defaultVariables: [
+      { id: "v1", name: "count", value: "5" },
+      { id: "v2", name: "topic", value: "نصائح الإنتاجية اليومية" },
+      { id: "v3", name: "platform", value: "Instagram" },
+      { id: "v4", name: "tone", value: "خفيف وودود" },
+      { id: "v5", name: "audience", value: "رجال الأعمال الشباب" }
+    ]
+  },
+  {
+    name: "محلل الأفكار النقدي",
+    description: "تحليل الفكرة من زوايا نقدية متعددة.",
+    category: "Analysis",
+    tags: ["Critical", "Analysis", "Thinking"],
+    sections: {
+      system: "أنت مفكر ناقد متخصص في تحليل الأفكار والمشاريع.",
+      developer: "قدم تحليلاً موازناً مع نقاط القوة والضعف والفرص والتهديدات.",
+      user: "حلل الفكرة التالية: {{idea}}\nقدم تقييماً نقدياً شاملاً.",
+      context: ""
+    },
+    defaultVariables: [
+      { id: "v1", name: "idea", value: "تطبيق توصيل الطعام بطائرات بدون طيار" }
+    ]
+  },
+  {
+    name: "مولد الأسئلة التدريبية",
+    description: "إنشاء أسئلة تدريبية وامتحانات فعالة.",
+    category: "Education",
+    tags: ["Quiz", "Exam", "Training"],
+    sections: {
+      system: "أنت متخصص في تطوير المناهج والتقييمات التعليمية.",
+      developer: "أنشئ أسئلة متنوعة من حيث مستوى الصعوبة والنوع (اختيار من متعدد، مقالي، صح وخطأ).",
+      user: "أنشئ {{count}} أسئلة عن {{subject}} لـ مستوى {{level}}.",
+      context: "الصعوبة: {{difficulty}}"
+    },
+    defaultVariables: [
+      { id: "v1", name: "count", value: "10" },
+      { id: "v2", name: "subject", value: "البرمجة بلغة Python" },
+      { id: "v3", name: "level", value: "متوسط" },
+      { id: "v4", name: "difficulty", value: "متدرج من السهل للصعب" }
+    ]
+  },
+  {
+    name: "كاتب القصص والسيناريوهات",
+    description: "كتابة قصص وسيناريوهات خيالية أو واقعية.",
+    category: "Creative",
+    tags: ["Story", "Creative", "Fiction"],
+    sections: {
+      system: "أنت كاتب قصص موهوب مع خبرة في السيناريو والإبداع الأدبي.",
+      developer: "استخدم وصفاً حياً، شخصيات معقدة، وأحداث درامية.",
+      user: "اكتب {{type}} عن {{premise}}. الطول: {{length}}. النمط: {{style}}.",
+      context: "الإعداد الزمني: {{time_period}}. الموقع: {{location}}"
+    },
+    defaultVariables: [
+      { id: "v1", name: "type", value: "قصة قصيرة" },
+      { id: "v2", name: "premise", value: "مهندس يكتشف ثغرة في قاعدة بيانات الحكومة" },
+      { id: "v3", name: "length", value: "1500 كلمة" },
+      { id: "v4", name: "style", value: "إثارة وتشويق" },
+      { id: "v5", name: "time_period", value: "مستقبل قريب" },
+      { id: "v6", name: "location", value: "السعودية - الرياض" }
+    ]
+  },
+  {
+    name: "مولد خطط المشاريع",
+    description: "إنشاء خطط مشاريع تفصيلية مع جدول زمني.",
+    category: "Management",
+    tags: ["Project", "Planning", "Timeline"],
+    sections: {
+      system: "أنت مدير مشاريع محترف برزمجيات إدارة متقدمة.",
+      developer: "قدم خطة مفصلة مع مراحل، مسؤوليات، ومؤشرات نجاح.",
+      user: "أنشئ خطة مشروع لـ: {{project_name}}. المدة: {{duration}}. الميزانية: {{budget}}.",
+      context: "الفريق: {{team_size}} شخص. التحديات المتوقعة: {{challenges}}"
+    },
+    defaultVariables: [
+      { id: "v1", name: "project_name", value: "تطوير منصة التعليم الإلكترونية" },
+      { id: "v2", name: "duration", value: "6 أشهر" },
+      { id: "v3", name: "budget", value: "500,000 ريال" },
+      { id: "v4", name: "team_size", value: "15" },
+      { id: "v5", name: "challenges", value: "التكامل مع الأنظمة القديمة، ضمان الأمان" }
     ]
   },
   {
@@ -290,11 +435,13 @@ const SEED_TECHNIQUES = [
 
 export async function seedDatabase() {
   console.log("🌱 Starting database seed...");
+  console.log("DATABASE_URL:", process.env.DATABASE_URL ? "Found" : "NOT FOUND");
 
   try {
     // Seed Templates
     console.log("📚 Seeding templates...");
     for (const template of SEED_TEMPLATES) {
+      console.log("Inserting:", template.name);
       await db.insert(templates).values(template);
     }
     console.log(`✅ Seeded ${SEED_TEMPLATES.length} templates`);
@@ -302,6 +449,7 @@ export async function seedDatabase() {
     // Seed Techniques
     console.log("🎯 Seeding techniques...");
     for (const technique of SEED_TECHNIQUES) {
+      console.log("Inserting:", technique.title);
       await db.insert(techniques).values(technique);
     }
     console.log(`✅ Seeded ${SEED_TECHNIQUES.length} techniques`);
@@ -313,9 +461,13 @@ export async function seedDatabase() {
   }
 }
 
-// Run seed if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  seedDatabase()
-    .then(() => process.exit(0))
-    .catch(() => process.exit(1));
-}
+// Run seed immediately
+seedDatabase()
+  .then(() => {
+    console.log("✨ Exiting...");
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });

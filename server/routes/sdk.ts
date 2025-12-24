@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { SDKGenerator, SupportedLanguage } from "../lib/sdk-generator/advanced-index";
 import { PromptConfig } from "../lib/sdk-generator/types";
+import { csrfProtection } from "../middleware/security";
 
 // Validation schema for SDK generation request
 const sdkGenerationSchema = z.object({
@@ -50,7 +51,7 @@ export function registerSDKRoutes(app: Express): void {
   /**
    * Generate SDK for a single language
    */
-  app.post("/api/sdk/generate", async (req, res) => {
+  app.post("/api/sdk/generate", csrfProtection, async (req, res) => {
     try {
       const validated = sdkGenerationSchema.parse(req.body);
 
@@ -85,7 +86,7 @@ export function registerSDKRoutes(app: Express): void {
   /**
    * Generate complete SDK package with documentation
    */
-  app.post("/api/sdk/generate-package", async (req, res) => {
+  app.post("/api/sdk/generate-package", csrfProtection, async (req, res) => {
     try {
       const validated = sdkGenerationSchema.parse(req.body);
 
@@ -120,7 +121,7 @@ export function registerSDKRoutes(app: Express): void {
   /**
    * Generate SDKs for all supported languages
    */
-  app.post("/api/sdk/generate-all", async (req, res) => {
+  app.post("/api/sdk/generate-all", csrfProtection, async (req, res) => {
     try {
       const schema = z.object({
         promptConfig: sdkGenerationSchema.shape.promptConfig,
@@ -209,7 +210,7 @@ export function registerSDKRoutes(app: Express): void {
   /**
    * Download SDK as a file
    */
-  app.post("/api/sdk/download", async (req, res) => {
+  app.post("/api/sdk/download", csrfProtection, async (req, res) => {
     try {
       const validated = sdkGenerationSchema.parse(req.body);
 

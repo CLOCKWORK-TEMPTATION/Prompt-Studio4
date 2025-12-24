@@ -72,7 +72,7 @@ export function WorkflowStepper({ currentStage, stageStatuses, onStageClick }: W
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm flex items-center gap-2">
-                  <span className="text-muted-foreground">{stageId}</span>
+                  <span className="text-muted-foreground">{stageId + 1}</span>
                   <span className={cn(isCurrent && "text-primary")}>{stage.title}</span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5">{stage.description}</div>

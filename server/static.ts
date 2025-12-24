@@ -10,10 +10,18 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    dotfiles: 'deny',
+    index: false
+  }));
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+    const indexPath = path.resolve(distPath, "index.html");
+    // Validate the resolved path is within distPath
+    if (!indexPath.startsWith(distPath)) {
+      return res.status(403).send("Forbidden");
+    }
+    res.sendFile(indexPath);
   });
 }

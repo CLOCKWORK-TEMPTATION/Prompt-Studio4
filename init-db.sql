@@ -4,7 +4,7 @@
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+-- CREATE EXTENSION IF NOT EXISTS "pg_stat_statements"; -- Disabled temporarily to avoid conflicts with Drizzle
 
 -- Create indexes for better performance
 -- These will be created by Drizzle migrations, but we can add some basic ones
@@ -39,4 +39,5 @@ DO $$
 BEGIN
     RAISE NOTICE 'Prompt Studio database initialized successfully';
 END $$;
+
 

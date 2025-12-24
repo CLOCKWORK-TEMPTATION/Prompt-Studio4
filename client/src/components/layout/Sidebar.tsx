@@ -7,23 +7,19 @@ import {
   Settings, 
   Sparkles, 
   BarChart2,
-  Users,
-  Code,
-  Cloud,
-  Edit3
+  Activity,
+  Graduation
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { label: "المحرر", icon: LayoutDashboard, href: "/studio" },
-  { label: "المحرر المتقدم", icon: Edit3, href: "/advanced-editor" },
-  { label: "التعاون الحي", icon: Users, href: "/collaboration" },
   { label: "القوالب", icon: Library, href: "/templates" },
   { label: "التقنيات", icon: BookOpen, href: "/techniques" },
   { label: "السجلات", icon: History, href: "/runs" },
   { label: "التحليلات", icon: BarChart2, href: "/analytics" },
-  { label: "توليد SDK", icon: Code, href: "/sdk-generator" },
-  { label: "النشر السحابي", icon: Cloud, href: "/cloud-deployment" },
+  { label: "المراقبة", icon: Activity, href: "/monitoring" },
+  { label: "التعلم", icon: Graduation, href: "/learn" },
   { label: "الإعدادات", icon: Settings, href: "/settings" },
 ];
 

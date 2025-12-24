@@ -493,3 +493,53 @@ export const monitoringApi = {
     return handleResponse(response);
   },
 };
+
+// Settings API
+export const settingsApi = {
+  getModels: async (): Promise<Array<{ id: string; name: string; provider: string }>> => {
+    const response = await fetch(`${API_BASE}/settings/models`, {
+      credentials: "include",
+    });
+    return handleResponse(response);
+  },
+
+  getSettings: async (): Promise<{
+    llm: { baseUrl: string; model: string; hasApiKey: boolean };
+    ui: { darkMode: boolean; rtlMode: boolean };
+  }> => {
+    const response = await fetch(`${API_BASE}/settings`, {
+      credentials: "include",
+    });
+    return handleResponse(response);
+  },
+
+  saveSettings: async (settings: {
+    llm?: { baseUrl?: string; model?: string; apiKey?: string };
+    ui?: { darkMode?: boolean; rtlMode?: boolean };
+  }): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${API_BASE}/settings`, {
+      method: "POST",
+      headers: await getSecureHeaders(),
+      body: JSON.stringify(settings),
+      credentials: "include",
+    });
+    return handleResponse(response);
+  },
+};
+
+// Prompt Enhancement API
+export const promptEnhancementApi = {
+  enhance: async (idea: string, customInstructions?: string): Promise<{
+    enhanced: string;
+    latency: number;
+    tokenUsage?: any;
+  }> => {
+    const response = await fetch(`${API_BASE}/prompts/enhance`, {
+      method: "POST",
+      headers: await getSecureHeaders(),
+      body: JSON.stringify({ idea, customInstructions }),
+      credentials: "include",
+    });
+    return handleResponse(response);
+  },
+};

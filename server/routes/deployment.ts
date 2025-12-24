@@ -6,8 +6,12 @@ import { Router } from 'express';
 import { cloudDeploymentService } from '../services/CloudDeploymentService';
 import { deploymentConfigManager } from '../services/DeploymentConfigManager';
 import { deploymentMonitor } from '../services/DeploymentMonitor';
+import { csrfProtection } from '../middleware/csrf';
 
 const router = Router();
+
+// Apply CSRF protection to all state-changing routes
+router.use(csrfProtection);
 
 /**
  * الحصول على المنصات المدعومة

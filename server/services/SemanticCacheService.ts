@@ -775,9 +775,11 @@ export class SemanticCacheService {
     const averageSimilarity = recentHits.length > 0 ? 0.92 : 0; // قيمة افتراضية (يمكن تحسينها)
 
     // حساب حجم التخزين المؤقت
-    const [{ cacheSize }] = await db.select({
+    const cacheSizeResult = await db.select({
       cacheSize: sql<number>`pg_total_relation_size('semantic_cache')`
     }).from(semanticCache).limit(1);
+    
+    const cacheSize = cacheSizeResult[0]?.cacheSize || 0;
 
     return {
       totalEntries: Number(totalEntries),

@@ -263,10 +263,12 @@ describe('الخاصية 11: السلامة', () => {
 
         migrationFiles.forEach((file: string) => {
           // Validate filename to prevent path traversal
-          if (file.includes('..') || file.includes('/') || file.includes('\\')) {
+          // Use resolve to prevent directory traversal attacks
+          const resolvedPath = join(migrationsDir, file);
+          if (!resolvedPath.startsWith(migrationsDir)) {
             throw new Error(`Invalid filename detected: ${file}`);
           }
-          const filePath = join(migrationsDir, file);
+          const filePath = resolvedPath;
           const content = readFileSync(filePath, 'utf-8');
 
           // يجب ألا تحتوي على بيانات حساسة
@@ -525,4 +527,5 @@ function formatBytes(bytes: number): string {
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+
 
