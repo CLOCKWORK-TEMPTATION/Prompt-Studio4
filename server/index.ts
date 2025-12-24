@@ -12,6 +12,8 @@ import { monitoringService } from "./services/MonitoringService";
 import { alertService } from "./services/AlertService";
 import { setupMonitoringMiddleware } from "./middleware/monitoring";
 import monitoringRoutes from "./routes/monitoring";
+import agentRouter from "./controllers/AgentController";
+import "./services/QueueService"; // Start workers
 import { securityHeaders, generalRateLimiter, requestId, validateContentLength } from "./middleware/security";
 import { csrfProtection, attachCsrfToken, getCsrfToken } from "./middleware/csrf";
 
@@ -24,15 +26,27 @@ declare module "http" {
   }
 }
 
+import { ensureAuthenticated } from "./middleware/auth";
+
 // Security middleware
 app.use(requestId);
 app.use(securityHeaders);
+
+// Auth Middleware (Global for /api, exclude /auth and /health)
+app.use('/api', (req, res, next) => {
+  const openPaths = ['/auth/login', '/auth/register', '/auth/logout', '/health'];
+  if (openPaths.some(path => req.path.startsWith(path))) {
+    return next();
+  }
+  ensureAuthenticated(req, res, next);
+});
 
 // Content length validation (10MB max for most requests)
 app.use(validateContentLength(10 * 1024 * 1024));
 
 // Rate limiting for API routes
 app.use('/api', generalRateLimiter);
+app.use('/api/agents', agentRouter);
 
 app.use(
   express.json({
@@ -72,7 +86,7 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000,http:/
         /^\[::1\]$/,
         /^\[::1\]:\d+$/
       ];
-      
+
       for (const pattern of privatePatterns) {
         if (pattern.test(hostname)) {
           return false;
@@ -113,6 +127,49 @@ app.use(
     name: "psid",
   }),
 );
+
+// Passport configuration
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import { users } from "@shared/schema";
+import { db } from "./storage";
+import { eq } from "drizzle-orm";
+import bcrypt from "bcryptjs";
+import authRoutes from "./routes/auth";
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+passport.use(new LocalStrategy({ usernameField: "email" }, async (email, password, done) => {
+  try {
+    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    if (!user) return done(null, false, { message: "Invalid credentials" });
+    if (!user.password) return done(null, false, { message: "Invalid credentials" }); // No password set (oauth user?)
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return done(null, false, { message: "Invalid credentials" });
+
+    return done(null, user);
+  } catch (err) {
+    return done(err);
+  }
+}));
+
+passport.serializeUser((user: any, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id: string, done) => {
+  try {
+    const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    done(null, user);
+  } catch (err) {
+    done(err);
+  }
+});
+
+// Mount Auth Routes
+app.use("/api/auth", authRoutes);
 
 // Sanitize log messages to prevent log injection
 function sanitizeLogMessage(message: string): string {
@@ -230,15 +287,15 @@ app.use((req, res, next) => {
   // Graceful shutdown handler
   const gracefulShutdown = (signal: string) => {
     log(`${signal} received, shutting down gracefully...`, "server");
-    
+
     // إيقاف خدمة المراقبة
     monitoringService.stop();
     log("Monitoring service stopped", "monitoring");
-    
+
     // إيقاف مُجدول التنظيف
     shutdownCacheCleanup();
     log("Cache cleanup scheduler stopped", "cache");
-    
+
     // إغلاق الخادم
     httpServer.close(() => {
       log("HTTP server closed", "server");

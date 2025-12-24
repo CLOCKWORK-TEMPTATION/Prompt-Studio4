@@ -11,89 +11,53 @@ import { Request, Response, NextFunction } from "express";
 // Rate Limiting
 // ============================================================
 
+// ============================================================
+// Redis Rate Limiting (Distributed)
+// ============================================================
+
+import { RateLimiterRedis } from "rate-limiter-flexible";
+import Redis from "ioredis";
+
+// Use existing REDIS_URL or default to localhost
+const redisClient = new Redis(process.env.REDIS_URL || "redis://localhost:6379", {
+  enableOfflineQueue: false,
+});
+
+redisClient.on("error", (err) => {
+  console.error("Redis Rate Limiter Error:", err);
+});
+
 interface RateLimitConfig {
-  windowMs: number;      // Time window in milliseconds
-  maxRequests: number;   // Maximum requests per window
-  message: string;       // Error message when limit exceeded
-  keyGenerator?: (req: Request) => string; // Custom key generator
+  points: number;          // Number of points
+  duration: number;        // Per second(s)
+  keyPrefix: string;       // Key prefix
+  message: string;         // Error message
 }
 
-interface RateLimitStore {
-  [key: string]: {
-    count: number;
-    resetTime: number;
-  };
-}
-
-// In-memory rate limit stores for different endpoints
-const rateLimitStores: { [endpoint: string]: RateLimitStore } = {};
-
-// Cleanup old entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const storeName of Object.keys(rateLimitStores)) {
-    const store = rateLimitStores[storeName];
-    for (const key of Object.keys(store)) {
-      if (store[key].resetTime < now) {
-        delete store[key];
-      }
-    }
-  }
-}, 5 * 60 * 1000);
-
-/**
- * Create a rate limiting middleware
- */
-export function createRateLimiter(config: RateLimitConfig) {
-  const storeName = `rateLimit_${config.windowMs}_${config.maxRequests}`;
-  if (!rateLimitStores[storeName]) {
-    rateLimitStores[storeName] = {};
-  }
-  const store = rateLimitStores[storeName];
+export function createRedisRateLimiter(config: RateLimitConfig) {
+  const rateLimiter = new RateLimiterRedis({
+    storeClient: redisClient,
+    points: config.points,
+    duration: config.duration,
+    keyPrefix: config.keyPrefix,
+  });
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const key = config.keyGenerator
-      ? config.keyGenerator(req)
-      : getClientIP(req);
+    const key = req.headers["x-user-id"] ? String(req.headers["x-user-id"]) : (req.ip || "unknown");
 
-    const now = Date.now();
-    const windowStart = now - config.windowMs;
-
-    if (!store[key] || store[key].resetTime < now) {
-      store[key] = {
-        count: 1,
-        resetTime: now + config.windowMs,
-      };
-      return next();
-    }
-
-    store[key].count++;
-
-    if (store[key].count > config.maxRequests) {
-      const retryAfter = Math.ceil((store[key].resetTime - now) / 1000);
-      res.set("Retry-After", String(retryAfter));
-      return res.status(429).json({
-        error: config.message,
-        retryAfter,
+    rateLimiter.consume(key)
+      .then(() => {
+        next();
+      })
+      .catch((rejRes) => {
+        const retrySecs = Math.round(rejRes.msBeforeNext / 1000) || 1;
+        res.set("Retry-After", String(retrySecs));
+        res.status(429).json({
+          error: config.message,
+          retryAfter: retrySecs,
+        });
       });
-    }
-
-    next();
   };
-}
-
-/**
- * Get client IP address, handling proxies
- */
-function getClientIP(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string") {
-    return forwarded.split(",")[0].trim();
-  }
-  if (Array.isArray(forwarded) && forwarded.length > 0) {
-    return forwarded[0].split(",")[0].trim();
-  }
-  return req.ip || req.socket.remoteAddress || "unknown";
 }
 
 // ============================================================
@@ -104,9 +68,10 @@ function getClientIP(req: Request): string {
  * General API rate limiter
  * 100 requests per minute
  */
-export const generalRateLimiter = createRateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 100,
+export const generalRateLimiter = createRedisRateLimiter({
+  points: 100,
+  duration: 60,
+  keyPrefix: "rl_general",
   message: "تم تجاوز الحد الأقصى للطلبات. يرجى المحاولة مرة أخرى لاحقاً.",
 });
 
@@ -114,29 +79,32 @@ export const generalRateLimiter = createRateLimiter({
  * AI endpoint rate limiter (more restrictive)
  * 20 requests per minute
  */
-export const aiRateLimiter = createRateLimiter({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 20,
+export const aiRateLimiter = createRedisRateLimiter({
+  points: 20,
+  duration: 60,
+  keyPrefix: "rl_ai",
   message: "تم تجاوز الحد الأقصى لطلبات AI. يرجى الانتظار قليلاً.",
 });
 
 /**
  * Authentication endpoint rate limiter
- * 10 requests per 15 minutes
+ * 10 requests per 15 minutes (900 seconds)
  */
-export const authRateLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxRequests: 10,
+export const authRateLimiter = createRedisRateLimiter({
+  points: 10,
+  duration: 15 * 60,
+  keyPrefix: "rl_auth",
   message: "محاولات كثيرة جداً. يرجى المحاولة مرة أخرى بعد 15 دقيقة.",
 });
 
 /**
  * File upload rate limiter
- * 5 uploads per hour
+ * 5 uploads per hour (3600 seconds)
  */
-export const uploadRateLimiter = createRateLimiter({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  maxRequests: 5,
+export const uploadRateLimiter = createRedisRateLimiter({
+  points: 5,
+  duration: 3600,
+  keyPrefix: "rl_upload",
   message: "تم تجاوز الحد الأقصى لرفع الملفات. يرجى المحاولة لاحقاً.",
 });
 

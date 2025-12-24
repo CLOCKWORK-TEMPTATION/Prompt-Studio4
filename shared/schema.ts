@@ -1,8 +1,13 @@
 
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, doublePrecision, primaryKey, unique, real, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, doublePrecision, primaryKey, unique, real, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
+
+const customBasicType = <T>(config: { type: string; dataType: () => string }) =>
+  customType<{ data: T }>({
+    dataType: config.dataType,
+  });
 
 // ============================================================
 // EXISTING TABLES (Preserved)
@@ -27,6 +32,7 @@ export const templates = pgTable("templates", {
     value: string;
   }>>().notNull().default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  searchVector: customBasicType({ type: "tsvector", dataType: () => "tsvector" })("search_vector"),
 }, (table) => ({
   nameIdx: index("idx_templates_name").on(table.name),
   categoryIdx: index("idx_templates_category").on(table.category),
@@ -50,6 +56,7 @@ export const techniques = pgTable("techniques", {
   commonMistakes: jsonb("common_mistakes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   snippet: text("snippet"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  searchVector: customBasicType({ type: "tsvector", dataType: () => "tsvector" })("search_vector"),
 }, (table) => ({
   titleIdx: index("idx_techniques_title").on(table.title),
   createdIdx: index("idx_techniques_created_at").on(table.createdAt),
@@ -87,6 +94,7 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").unique().notNull(),
   name: text("name").notNull(),
+  password: text("password"), // Hashed password
   avatar: text("avatar"),
   color: text("color").default("#3B82F6"),
   tenantId: text("tenant_id").references(() => tenants.id),
@@ -239,7 +247,14 @@ export const cacheConfig = pgTable("cache_config", {
   defaultTTLSeconds: integer("default_ttl_seconds").default(3600).notNull(),
   maxCacheSize: integer("max_cache_size").default(1000).notNull(),
   invalidationRules: jsonb("invalidation_rules").$type<any[]>().default(sql`'[]'::jsonb`),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Session (connect-pg-simple)
+export const session = pgTable("session", {
+  sid: text("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
 });
 
 // Marketplace Prompts
@@ -284,6 +299,7 @@ export const runs = pgTable("runs", {
   latency: integer("latency"),
   tokenUsage: jsonb("token_usage"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  searchVector: customBasicType({ type: "tsvector", dataType: () => "tsvector" })("search_vector"),
 }, (table) => ({
   versionIdx: index("idx_runs_prompt_version_id").on(table.promptVersionId),
   modelIdx: index("idx_runs_model").on(table.model),
