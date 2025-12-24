@@ -12,7 +12,7 @@ const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
 const GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
 // Default model for Groq
-const DEFAULT_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct";
+const DEFAULT_MODEL = "gpt-5.2";
 
 export interface Message {
   role: "system" | "user" | "assistant" | "developer";
@@ -63,7 +63,7 @@ export class LLMProvider {
   private getApiKey(provider: string, sessionKey?: string): string {
     // Priority: session API key > environment secret
     let key: string | undefined;
-    
+
     switch (provider) {
       case "groq":
         key = sessionKey || GROQ_API_KEY;
@@ -80,7 +80,7 @@ export class LLMProvider {
       default:
         key = sessionKey || GROQ_API_KEY; // fallback to Groq
     }
-    
+
     if (!key) {
       throw new Error(`NO_API_KEY_FOR_${provider.toUpperCase()}`);
     }
@@ -174,7 +174,7 @@ export class LLMProvider {
     // Convert messages format for Anthropic
     const systemMessage = messages.find(m => m.role === "system")?.content || "";
     const userMessages = messages.filter(m => m.role !== "system");
-    
+
     return fetch(`${this.anthropicBaseUrl}/messages`, {
       method: "POST",
       headers: {
@@ -228,6 +228,14 @@ export class LLMProvider {
         } : undefined;
         break;
       case "google":
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+          console.error("Google API Response missing candidates:", JSON.stringify(data, null, 2));
+          // Check for safety ratings or prompt feedback if available
+          if (data.promptFeedback) {
+            throw new Error(`Google API Blocked: ${JSON.stringify(data.promptFeedback)}`);
+          }
+          throw new Error("Google API returned unexpected format (no candidates)");
+        }
         output = data.candidates[0].content.parts[0].text;
         tokenUsage = data.usageMetadata ? {
           prompt: data.usageMetadata.promptTokenCount,
@@ -309,12 +317,43 @@ Context: ${prompt.context || "(فارغ)"}
     }, sessionKey);
 
     // Parse the JSON response
+    // Parse the JSON response securely
     try {
-      const output = response.output.trim();
-      // Remove markdown code blocks if present
-      const jsonMatch = output.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, output];
-      const jsonText = jsonMatch[1] || output;
-      const result = JSON.parse(jsonText);
+      const trimmed = response.output.trim();
+      let result: any;
+      let parsed = false;
+
+      // 1. Try extracting from Markdown code blocks first
+      const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonMatch && jsonMatch[1]) {
+        try {
+          result = JSON.parse(jsonMatch[1]);
+          parsed = true;
+        } catch (e) {
+          // Continue
+        }
+      }
+
+      // 2. Try looking for the first '{' and last '}'
+      if (!parsed) {
+        try {
+          const firstOpen = trimmed.indexOf('{');
+          const lastClose = trimmed.lastIndexOf('}');
+
+          if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
+            const candidate = trimmed.substring(firstOpen, lastClose + 1);
+            result = JSON.parse(candidate);
+            parsed = true;
+          }
+        } catch (e) {
+          // Continue
+        }
+      }
+
+      // 3. Last resort
+      if (!parsed) {
+        result = JSON.parse(trimmed);
+      }
 
       return {
         score: result.score,
@@ -326,12 +365,13 @@ Context: ${prompt.context || "(فارغ)"}
       };
     } catch (error) {
       // Fallback if parsing fails
+      console.error("Critique parsing failed for input:", response.output?.substring(0, 200));
       return {
         score: 50,
         issues: [
           {
             severity: "error",
-            message: "فشل تحليل الـ JSON من النموذج",
+            message: "فشل تحليل الـ JSON من النموذج (Robust Parse Failed)",
             suggestion: "حاول مرة أخرى",
           },
         ],

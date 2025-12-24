@@ -139,6 +139,9 @@ lib-cov
 .rts2_cache_es/
 .rts2_cache_umd/
 *.tgz
+*.zip
+*.rar
+*.7z
 
 # ==============================================================================
 # OPERATING SYSTEMS

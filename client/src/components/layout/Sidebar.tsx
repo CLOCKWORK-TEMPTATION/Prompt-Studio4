@@ -1,14 +1,14 @@
 import { Link, useLocation } from "wouter";
-import { 
-  LayoutDashboard, 
-  Library, 
-  BookOpen, 
-  History, 
-  Settings, 
-  Sparkles, 
+import {
+  LayoutDashboard,
+  Library,
+  BookOpen,
+  History,
+  Settings,
+  Sparkles,
   BarChart2,
   Activity,
-  Graduation
+  GraduationCap
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,7 @@ const NAV_ITEMS = [
   { label: "السجلات", icon: History, href: "/runs" },
   { label: "التحليلات", icon: BarChart2, href: "/analytics" },
   { label: "المراقبة", icon: Activity, href: "/monitoring" },
-  { label: "التعلم", icon: Graduation, href: "/learn" },
+  { label: "التعلم", icon: GraduationCap, href: "/learn" },
   { label: "الإعدادات", icon: Settings, href: "/settings" },
 ];
 

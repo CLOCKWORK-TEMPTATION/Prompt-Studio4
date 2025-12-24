@@ -20,6 +20,7 @@ interface Stage3EditProps {
   onUpdateVariable: (id: string, field: keyof Variable, value: string) => void;
   onApplyChanges?: () => void;
   onResetToAgents?: () => void;
+  onApprove?: () => void;
 }
 
 export function Stage3Edit({
@@ -33,10 +34,12 @@ export function Stage3Edit({
   onUpdateVariable,
   onApplyChanges,
   onResetToAgents,
+  onApprove,
 }: Stage3EditProps) {
   const { toast } = useToast();
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("system");
 
   useEffect(() => {
     if (!committedSections) {
@@ -126,7 +129,7 @@ export function Stage3Edit({
           </div>
         )}
 
-        <Tabs defaultValue="system" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full justify-start mb-4">
             <TabsTrigger value="system">System</TabsTrigger>
             <TabsTrigger value="developer">Developer</TabsTrigger>
@@ -222,6 +225,26 @@ export function Stage3Edit({
               <pre className="whitespace-pre-wrap text-sm font-mono" data-testid="preview-text">
                 {getPreview()}
               </pre>
+            </div>
+
+            <div className="flex items-center gap-3 mt-4 pt-4 border-t">
+              <Button
+                onClick={() => onApprove?.()}
+                className="flex-1"
+                data-testid="button-approve-preview"
+              >
+                <Check className="ml-2 size-4" />
+                موافق واعتمد النتيجة
+              </Button>
+              <Button
+                onClick={() => setActiveTab("system")}
+                variant="outline"
+                className="flex-1"
+                data-testid="button-edit-preview"
+              >
+                <RotateCcw className="ml-2 size-4" />
+                أريد تعديل المحتوى
+              </Button>
             </div>
           </TabsContent>
         </Tabs>

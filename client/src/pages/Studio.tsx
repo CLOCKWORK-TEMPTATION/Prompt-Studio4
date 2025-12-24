@@ -35,15 +35,17 @@ const AI_MODELS = [
   { id: "meta-llama/llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout 17B 16E", provider: "groq" },
   { id: "moonshotai/kimi-k2-instruct-0905", name: "Kimi K2 0905", provider: "groq" },
   { id: "qwen/qwen3-32b", name: "Qwen3-32B", provider: "groq" },
-  
+
   // OpenAI Models
-  { id: "gpt-5", name: "GPT-5", provider: "openai" },
   { id: "gpt-5.2", name: "GPT-5.2", provider: "openai" },
-  
+  { id: "gpt-5-pro", name: "GPT-5 Pro", provider: "openai" },
+  { id: "o1-pro", name: "O1 Pro", provider: "openai" },
+  { id: "gpt-4.1", name: "GPT-4.1", provider: "openai" },
+
   // Google Models
   { id: "models/gemini-3-flash-preview", name: "Gemini 3 Flash Preview", provider: "google" },
   { id: "models/gemini-3-pro-preview", name: "Gemini 3 Pro Preview", provider: "google" },
-  
+
   // Anthropic Models
   { id: "claude-4-sonnet", name: "Claude Sonnet 4", provider: "anthropic" },
   { id: "claude-4.5-sonnet", name: "Claude Sonnet 4.5", provider: "anthropic" },
@@ -90,7 +92,7 @@ export default function StudioNew() {
       setGoal(sharedPrompt.goal);
       setConstraints(sharedPrompt.constraints);
       setOutputFormat(sharedPrompt.outputFormat);
-      
+
       toast({
         title: "تم تحميل الموجهة",
         description: "تم تحميل الموجهة من الرابط المشترك"
@@ -369,18 +371,18 @@ export default function StudioNew() {
         category: "general",
         tags: [],
       };
-      
+
       await templatesApi.create(templateData);
-      toast({ 
-        title: "تم الحفظ بنجاح", 
-        description: "تم حفظ المطالبة في مكتبة القوالب" 
+      toast({
+        title: "تم الحفظ بنجاح",
+        description: "تم حفظ المطالبة في مكتبة القوالب"
       });
       setWorkflowState((prev) => ({ ...prev, hasSaved: true }));
     } catch (error) {
-      toast({ 
-        title: "فشل الحفظ", 
+      toast({
+        title: "فشل الحفظ",
         description: error instanceof Error ? error.message : "حدث خطأ أثناء الحفظ",
-        variant: "destructive" 
+        variant: "destructive"
       });
     }
   };
@@ -439,6 +441,7 @@ export default function StudioNew() {
             onUpdateVariable={handleUpdateVariable}
             onApplyChanges={handleApplyChanges}
             onResetToAgents={handleResetToAgents}
+            onApprove={handleNextStage}
           />
         );
       case 4:

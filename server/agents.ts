@@ -76,7 +76,7 @@ ${outputFormat ? `- شكل المخرجات المطلوب: ${outputFormat}` : "
 }`;
 
   const result = await llmProvider.complete({
-    model: modelConfig?.model || "llama-3.3-70b-versatile",
+    model: modelConfig?.model || "gpt-5.2",
     messages: [
       { role: "system", content: "أنت خبير هندسة مطالبات. مخرجاتك حصراً JSON صالح." },
       { role: "user", content: promptText },
@@ -134,7 +134,7 @@ ${originalIdea}
 }`;
 
   const result = await llmProvider.complete({
-    model: modelConfig?.model || "llama-3.3-70b-versatile",
+    model: modelConfig?.model || "gpt-5.2",
     messages: [
       { role: "system", content: "أنت مراجع نقدي دقيق. مخرجاتك حصراً JSON صالح." },
       { role: "user", content: promptText },
@@ -200,7 +200,7 @@ ${originalIdea}
 }`;
 
   const result = await llmProvider.complete({
-    model: modelConfig?.model || "llama-3.3-70b-versatile",
+    model: modelConfig?.model || "gpt-5.2",
     messages: [
       { role: "system", content: "أنت حكم نهائي حكيم. مخرجاتك حصراً JSON صالح." },
       { role: "user", content: promptText },
@@ -223,15 +223,37 @@ ${originalIdea}
  * Helper: Parse JSON output from LLM (handles markdown code blocks)
  */
 function parseAgentOutput<T>(output: string): T {
+  const trimmed = output.trim();
+
+  // 1. Try extracting from Markdown code blocks first
+  const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (jsonMatch && jsonMatch[1]) {
+    try {
+      return JSON.parse(jsonMatch[1]);
+    } catch (e) {
+      // Continue to fallback if block content isn't valid JSON
+    }
+  }
+
+  // 2. Try looking for the first '{' and last '}'
   try {
-    const trimmed = output.trim();
-    // Remove markdown code blocks if present
-    const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, trimmed];
-    const jsonText = jsonMatch[1] || trimmed;
-    return JSON.parse(jsonText);
+    const firstOpen = trimmed.indexOf('{');
+    const lastClose = trimmed.lastIndexOf('}');
+
+    if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
+      const candidate = trimmed.substring(firstOpen, lastClose + 1);
+      return JSON.parse(candidate);
+    }
+  } catch (e) {
+    // Continue to fallback
+  }
+
+  // 3. Last resort: try parsing the whole string (rarely works if we got here)
+  try {
+    return JSON.parse(trimmed);
   } catch (error) {
     const sanitizedOutput = String(output).replace(/[\r\n]/g, ' ').substring(0, 100);
-    console.error("Failed to parse agent output:", sanitizedOutput);
-    throw new Error(`فشل تحليل مخرجات الوكيل: ${error instanceof Error ? error.message : "خطأ غير معروف"}`);
+    console.error("Failed to parse agent output (Robust Parse Failed):", sanitizedOutput);
+    throw new Error(`فشل تحليل مخرجات الوكيل (JSON غير صالح): ${error instanceof Error ? error.message : "خطأ غير معروف"}`);
   }
 }

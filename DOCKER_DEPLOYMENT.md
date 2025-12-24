@@ -310,3 +310,4 @@ kubectl create -f docker-compose-resolved.yml
 - استخدم secrets management في الإنتاج بدلاً من متغيرات البيئة
 
 
+

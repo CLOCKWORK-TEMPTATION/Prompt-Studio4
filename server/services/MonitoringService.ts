@@ -100,7 +100,7 @@ export class MonitoringService extends EventEmitter {
       {
         id: 'high-memory-usage',
         name: 'استخدام مرتفع للذاكرة',
-        condition: (metrics) => metrics.memory.percentage > 85,
+        condition: (metrics) => metrics.memory.percentage > 95,
         severity: 'high',
         cooldown: 300,
         enabled: true,
@@ -189,10 +189,10 @@ export class MonitoringService extends EventEmitter {
     if (process.env.NODE_ENV !== 'test') {
       console.log('[Monitoring] تم إيقاف خدمة المراقبة');
     }
-    
+
     // إرسال حدث الإيقاف قبل تنظيف المستمعين
     this.emit('stopped');
-    
+
     // تنظيف جميع المستمعين لمنع memory leaks
     this.removeAllListeners();
   }
@@ -314,7 +314,7 @@ export class MonitoringService extends EventEmitter {
           FROM pg_stat_activity 
           WHERE state = 'active'
         `);
-        connectionCount = Number(result[0]?.count) || 0;
+        connectionCount = Number(result.rows[0]?.count) || 0;
       } catch {
         // تجاهل الخطأ إذا لم نتمكن من الحصول على العدد
       }
@@ -578,7 +578,7 @@ export class MonitoringService extends EventEmitter {
   } {
     const currentMetrics = this.getCurrentMetrics();
     const activeAlerts = this.getActiveAlerts();
-    
+
     if (!currentMetrics) {
       return {
         status: 'warning',

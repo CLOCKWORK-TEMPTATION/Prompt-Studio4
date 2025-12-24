@@ -28,7 +28,7 @@ export function StageHeader({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-            {currentStage}
+            {currentStage + 1}
           </div>
           <div>
             <h2 className="font-bold text-lg">{stage.title}</h2>
